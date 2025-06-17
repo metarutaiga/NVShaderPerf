@@ -1,15 +1,8 @@
 #include <Windows.h>
 #include <stdio.h>
 
-#define USE_CONSOLE 1
-
-#if USE_CONSOLE
-#define WriteString(v) printf("%s", v)
-#else
-#define WriteString OutputDebugStringA
-#endif
-
 #include "NVShaderPerf.h"
+#include "NVShaderPerfPatch.h"
 
 union NVShaderPerf {
     struct {
@@ -84,114 +77,6 @@ static NVShaderPerfQueryInterface NVShaderPerfLoader(const wchar_t* folder)
 
     SetCurrentDirectoryW(current);
     return NVSPQueryInterface;
-}
-
-static int PatchPrintf(const char* format, ...)
-{
-    va_list args;
-    va_start(args, format);
-
-    int length = vsnprintf(NULL, 0, format, args);
-    char* buffer = (char*)malloc(length + 2);
-    vsnprintf(buffer, length + 2, format, args);
-    if (buffer && strncmp(buffer, "Called deriveFP", sizeof("Called deriveFP") - 1) == 0) {
-        buffer[length + 0] = '\n';
-        buffer[length + 1] = 0;
-    }
-    if (buffer && strncmp(buffer, "Uniqueness Dword", sizeof("Uniqueness Dword") - 1) == 0) {
-        buffer[length + 0] = '\n';
-        buffer[length + 1] = 0;
-    }
-    WriteString(buffer);
-    free(buffer);
-
-    va_end(args);
-
-    return length;
-}
-
-static int PatchFprintf(FILE* file, const char* format, ...)
-{
-    va_list args;
-    va_start(args, format);
-
-    int length = vsnprintf(NULL, 0, format, args);
-    char* buffer = (char*)malloc(length + 1);
-    vsnprintf(buffer, length + 1, format, args);
-    WriteString(buffer);
-    free(buffer);
-
-    va_end(args);
-
-    return length;
-}
-
-static void WriteCode(void* pvTarget, const void* pvSource, size_t nSize)
-{
-    DWORD nOldP, nNewP;
-    VirtualProtect(pvTarget, nSize, PAGE_READWRITE, &nOldP);
-    WriteProcessMemory(GetCurrentProcess(), pvTarget, pvSource, nSize, NULL);
-    VirtualProtect(pvTarget, nSize, nOldP, &nNewP);
-}
-
-static void Patch10131(int verbose)
-{
-    HMODULE dll = GetModuleHandleA("NVShaderPerf_10131.dll");
-    if (dll) {
-        // 0D 00 70 00 00
-        WriteCode((char*)dll + 0x4054, "\x0D\x00\x70\x00\x00", 5);
-
-        // printf
-        static void* printf_impl = &PatchPrintf;
-        WriteCode((char*)dll + 0x1CD0E0, &printf_impl, sizeof(void*));
-
-        // fprintf
-        static void* fprintf_impl = &PatchFprintf;
-        WriteCode((char*)dll + 0x1CD150, &fprintf_impl, sizeof(void*));
-
-        // Level
-        memcpy((char*)dll + 0x28E6B0, &verbose, 1);
-    }
-}
-
-static void Patch17474(int verbose)
-{
-    HMODULE dll = GetModuleHandleA("NVShaderPerf_17474.dll");
-    if (dll) {
-        unsigned int flags = 0x00007000;
-        WriteCode((char*)dll + 0x3E706, &flags, 4);
-
-        // COPP
-        // 6A 01
-        // 5D
-        // 8B C5
-        // 89 86 C0 01 00 00
-        WriteCode((char*)dll + 0xF44EA, "\x6A\x01\x5D\x8B\xC5\x89\x86\xC0\x01\x00\x00", 11);
-
-        // vp50_ucode
-        // 6A 01
-        // 58
-        // 89 87 C8 00 00 00
-        WriteCode((char*)dll + 0x1C4B5D, "\x6A\x01\x58\x89\x87\xC8\x00\x00\x00", 9);
-
-        // fp50_ucode
-        // 6A 01
-        // 58
-        // 89 86 C8 00 00 00
-        // 57
-        WriteCode((char*)dll + 0x1C697C, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
-
-        // printf
-        static void* printf_impl = &PatchPrintf;
-        WriteCode((char*)dll + 0x22F11C, &printf_impl, sizeof(void*));
-
-        // fprintf
-        static void* fprintf_impl = &PatchFprintf;
-        WriteCode((char*)dll + 0x22F278, &fprintf_impl, sizeof(void*));
-
-        // Level
-        memcpy((char*)dll + 0x2EA418, &verbose, 1);
-    }
 }
 
 #if USE_CONSOLE
@@ -362,6 +247,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         if (strcmp(arg, "-subdirs") == 0) {
             continue;
         }
+        if (strcmp(arg, "-fo") == 0 || strcmp(arg, "-fileoutput") == 0) {
+            if (++i == argc) {
+                WriteString("Invalid Parameter\n");
+                return 0;
+            }
+            fileOutputFilename = argv[i];
+            continue;
+        }
         filename = arg;
     }
 
@@ -388,6 +281,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         WriteString("\t-allprec\n");
         WriteString("\t-allbranch\n");
         WriteString("\t-subdirs\n");
+        WriteString("\t-fo/-fileoutput fileoutputfilename\n");
         return 0;
     }
 
