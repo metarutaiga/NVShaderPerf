@@ -127,11 +127,38 @@ static int PatchDumpG80(DWORD* g80)
         FILE* file = nullptr;
         fopen_s(&file, fileOutputFilename, "wb");
         if (file) {
-            fwrite(g80, 1, g80[6], file);
+            DWORD* data = (DWORD*)malloc(g80[6]);
+            if (data) {
+                memcpy(data, g80, g80[6]);
+                for (DWORD i = 0; i < WORD(data[2]); ++i) {
+                    DWORD offset = data[10 + i * 8];
+                    if (offset) {
+                        offset -= (DWORD)g80;
+                        data[10 + i * 8] = offset;
+                    }
+                }
+                fwrite(data, 1, g80[6], file);
+                free(data);
+            }
             fclose(file);
         }
     }
     return DumpG80(g80);
+}
+
+int DumpBinG80(DWORD* g80)
+{
+    if (DumpG80) {
+        for (DWORD i = 0; i < WORD(g80[2]); ++i) {
+            DWORD offset = g80[10 + i * 8];
+            if (offset) {
+                offset += (DWORD)g80;
+                g80[10 + i * 8] = offset;
+            }
+        }
+        DumpG80(g80);
+    }
+    return 0;
 }
 
 static void WriteCode(void* pvTarget, const void* pvSource, size_t nSize)

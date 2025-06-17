@@ -11,3 +11,5 @@
 extern const char* fileOutputFilename;
 extern void Patch10131(int verbose);
 extern void Patch17474(int verbose);
+
+extern int DumpBinG80(DWORD* g80);

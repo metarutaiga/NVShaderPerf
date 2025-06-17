@@ -104,6 +104,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     const char* filename = nullptr;
     bool listgpus = false;
     bool listdrivers = false;
+    const char* dumpbin = nullptr;
 
     // help
     for (int i = 1; i < argc; ++i) {
@@ -255,10 +256,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             fileOutputFilename = argv[i];
             continue;
         }
+        if (strcmp(arg, "-dumpbin") == 0) {
+            if (++i == argc) {
+                WriteString("Invalid Parameter\n");
+                return 0;
+            }
+            verbose = 100;
+            dumpbin = argv[i];
+            continue;
+        }
         filename = arg;
     }
 
-    if (filename == nullptr) {
+    if (filename == nullptr && dumpbin == nullptr) {
         WriteString("\t-h/-help argname\n");
         WriteString("\t-m/-mrt count\n");
         WriteString("\t-o/-output outputfilename\n");
@@ -282,6 +292,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         WriteString("\t-allbranch\n");
         WriteString("\t-subdirs\n");
         WriteString("\t-fo/-fileoutput fileoutputfilename\n");
+        WriteString("\t-dumpbin dumpbinfilename\n");
         return 0;
     }
 
@@ -343,31 +354,54 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         if (cgcpath)    result = NVShaderPerf.SetValuePtr(CGCPath, cgcpath);
         if (flags)      result = NVShaderPerf.SetValue(Flags, flags);
 
-        for (int i = 0; i < 2; ++i) {
-            if (i == 0) {
-                int count = 0;
-                VertexProgramResults* results = nullptr;
-                result = NVShaderPerf.VertexProgramPerformance(filename, 0, &results, &count);
-                for (int i = 0; i < count; ++i) {
-                    char temp[256];
-                    snprintf(temp, 256, "%sVertex Performance Setup: Driver %s, GPU %s, Flags 0x%X\n", "", results[i].Driver, results[i].GPU, results[i].Flags);
-                    snprintf(temp, 256, "%sResults %d cycles, %d r regs, %lld vertices/s\n", temp, results[i].Cycles, results[i].Registers, results[i].VertexThroughput);
-                    WriteString(temp);
+        if (dumpbin) {
+            FILE* file = nullptr;
+            fopen_s(&file, dumpbin, "rb");
+            if (file) {
+                fseek(file, 0, SEEK_END);
+                size_t count = ftell(file);
+                fseek(file, 0, SEEK_SET);
+                DWORD* data = (DWORD*)malloc(count);
+                fread(data, 1, count, file);
+                fclose(file);
+                if (gpu) {
+                    if (_stricmp(gpu, "G80") == 0) {
+                        DumpBinG80((DWORD*)data);
+                    }
                 }
-                result = NVShaderPerf.FreeVertexResults(results);
+                free(data);
             }
-            else if (i == 1) {
-                int count = 0;
-                FragmentProgramResults* results = nullptr;
-                result = NVShaderPerf.FragmentProgramPerformance(filename, 0, &results, &count);
-                for (int i = 0; i < count; ++i) {
-                    char temp[256];
-                    snprintf(temp, 256, "%sFragment Performance Setup: Driver %s, GPU %s, Flags 0x%X\n", "", results[i].Driver, results[i].GPU, results[i].Flags);
-                    snprintf(temp, 256, "%sResults %d cycles, %d r regs, %lld pixels/s\n", temp, results[i].Cycles, results[i].Registers, results[i].PixelThroughput);
-                    WriteString(temp);
-                }
-                result = NVShaderPerf.FreeFragmentResults(results);
+            break;
+        }
+
+        switch (shaderType) {
+        case HLSLVertexProgram: {
+            int count = 0;
+            VertexProgramResults* results = nullptr;
+            result = NVShaderPerf.VertexProgramPerformance(filename, 0, &results, &count);
+            for (int i = 0; i < count; ++i) {
+                char temp[256];
+                snprintf(temp, 256, "%sVertex Performance Setup: Driver %s, GPU %s, Flags 0x%X\n", "", results[i].Driver, results[i].GPU, results[i].Flags);
+                snprintf(temp, 256, "%sResults %d cycles, %d r regs, %lld vertices/s\n", temp, results[i].Cycles, results[i].Registers, results[i].VertexThroughput);
+                WriteString(temp);
             }
+            result = NVShaderPerf.FreeVertexResults(results);
+            break;
+        }
+        case HLSLFragmentProgram: {
+            int count = 0;
+            FragmentProgramResults* results = nullptr;
+            result = NVShaderPerf.FragmentProgramPerformance(filename, 0, &results, &count);
+            for (int i = 0; i < count; ++i) {
+                char temp[256];
+                snprintf(temp, 256, "%sFragment Performance Setup: Driver %s, GPU %s, Flags 0x%X\n", "", results[i].Driver, results[i].GPU, results[i].Flags);
+                snprintf(temp, 256, "%sResults %d cycles, %d r regs, %lld pixels/s\n", temp, results[i].Cycles, results[i].Registers, results[i].PixelThroughput);
+                WriteString(temp);
+            }
+            result = NVShaderPerf.FreeFragmentResults(results);
+        }
+        default:
+            break;
         }
     }
 
