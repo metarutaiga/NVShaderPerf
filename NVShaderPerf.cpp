@@ -365,6 +365,29 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 fread(data, 1, count, file);
                 fclose(file);
                 if (gpu) {
+                    if (_stricmp(gpu, "NV30") == 0) {
+                        if (shaderType == HLSLVertexProgram) {
+                            DumpBinNV30VS((DWORD*)data, count);
+                        }
+                        else if (shaderType == HLSLFragmentProgram) {
+                        }
+                    }
+                    if (_stricmp(gpu, "NV40") == 0) {
+                        if (shaderType == HLSLVertexProgram) {
+                            DumpBinNV40VS((DWORD*)data, count);
+                        }
+                        else if (shaderType == HLSLFragmentProgram) {
+                            DumpBinNV40PS((DWORD*)data, count);
+                        }
+                    }
+                    if (_stricmp(gpu, "G70") == 0) {
+                        if (shaderType == HLSLVertexProgram) {
+                            DumpBinNV40VS((DWORD*)data, count);
+                        }
+                        else if (shaderType == HLSLFragmentProgram) {
+                            DumpBinG70PS((DWORD*)data, count);
+                        }
+                    }
                     if (_stricmp(gpu, "G80") == 0) {
                         DumpBinG80((DWORD*)data);
                     }

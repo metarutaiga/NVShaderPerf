@@ -77,6 +77,19 @@ int PatchNV30::PatchDumpNV30PS(DWORD* data)
     return (this->*DumpNV30PS)(data);
 }
 
+static int (*ConvertNV30VS)(DWORD convert[45], DWORD* nv30);
+static int (*DecodeNV30VS)(DWORD convert[45]);
+int DumpBinNV30VS(DWORD* nv30, int size)
+{
+    DWORD convert[45];
+    for (int i = 0; i < size / 4; i += 4) {
+        printf("%02x: %08x %08x %08x %08x\n", i, nv30[i + 0], nv30[i + 1], nv30[i + 2], nv30[i + 3]);
+        ConvertNV30VS(convert, &nv30[i]);
+        DecodeNV30VS(convert);
+    }
+    return 0;
+}
+
 static FILE* outputFileNV40 = nullptr;
 static int (*DumpNV40VS)(DWORD* output, DWORD* instruction);
 static int PatchDumpNV40VS(DWORD* output, DWORD* instruction)
@@ -106,8 +119,25 @@ static int PatchDumpNV40PS(DWORD* nv40, int size)
     return DumpNV40PS(nv40, size);
 }
 
-static int (*DumpG70)(DWORD* g70, int size);
-static int PatchDumpG70(DWORD* g70, int size)
+static int (*ConvertNV40VS)(DWORD convert[50], DWORD* nv40);
+static int (*DecodeNV40VS)(DWORD convert[50]);
+int DumpBinNV40VS(DWORD* nv40, int size)
+{
+    DWORD convert[50];
+    for (int i = 0; i < size / 4; i += 4) {
+        printf("%02x: %08x %08x %08x %08x\n", i, nv40[i + 0], nv40[i + 1], nv40[i + 2], nv40[i + 3]);
+        ConvertNV40VS(convert, &nv40[i]);
+        DecodeNV40VS(convert);
+    }
+    return 0;
+}
+int DumpBinNV40PS(DWORD* nv40, int size)
+{
+    return DumpNV40PS(nv40, size);
+}
+
+static int (*DumpG70PS)(DWORD* g70, int size);
+static int PatchDumpG70PS(DWORD* g70, int size)
 {
     if (fileOutputFilename) {
         FILE* file = nullptr;
@@ -117,7 +147,12 @@ static int PatchDumpG70(DWORD* g70, int size)
             fclose(file);
         }
     }
-    return DumpG70(g70, size);
+    return DumpG70PS(g70, size);
+}
+
+int DumpBinG70PS(DWORD* g70, int size)
+{
+    return DumpG70PS(g70, size);
 }
 
 static int (*DumpG80)(DWORD* g80);
@@ -173,13 +208,14 @@ void Patch10131(int verbose)
 {
     HMODULE dll = GetModuleHandleA("NVShaderPerf_10131.dll");
     if (dll) {
-        // 0D 00 70 00 00
         WriteCode((char*)dll + 0x4054, "\x0D\x00\x70\x00\x00", 5);
 
         // NV30
         union Alias { int (PatchNV30::*classFunction)(DWORD* data); void* function; };
         int jumpNV30;
         (void*&)DumpNV30PS = (char*)dll + 0x658C0;
+        (void*&)ConvertNV30VS = (char*)dll + 0xAB140;
+        (void*&)DecodeNV30VS = (char*)dll + 0xAB390;
         (void*&)DumpNV30VS = (char*)dll + 0xAAF10;
         jumpNV30 = (int)Alias { &PatchNV30::PatchDumpNV30PS }.function - ((int)dll + 0x5DBD6 + 0x4);
         WriteCode((char*)dll + 0x5DBD6, &jumpNV30, 4);
@@ -210,15 +246,17 @@ void Patch17474(int verbose)
 
         // G70
         int jumpG70;
-        (void*&)DumpG70 = (char*)dll + 0x5FD90;
-        jumpG70 = (int)PatchDumpG70 - ((int)dll + 0x484FD + 0x4);
+        (void*&)DumpG70PS = (char*)dll + 0x5FD90;
+        jumpG70 = (int)PatchDumpG70PS - ((int)dll + 0x484FD + 0x4);
         WriteCode((char*)dll + 0x484FD, &jumpG70, 4);
-        jumpG70 = (int)PatchDumpG70 - ((int)dll + 0x48581 + 0x4);
+        jumpG70 = (int)PatchDumpG70PS - ((int)dll + 0x48581 + 0x4);
         WriteCode((char*)dll + 0x48581, &jumpG70, 4);
 
         // NV40
         int jumpNV40;
         (void*&)DumpNV40PS = (char*)dll + 0x7AB50;
+        (void*&)ConvertNV40VS = (char*)dll + 0xD1A50;
+        (void*&)DecodeNV40VS = (char*)dll + 0xD1CE0;
         (void*&)DumpNV40VS = (char*)dll + 0xD1F30;
         jumpNV40 = (int)PatchDumpNV40PS - ((int)dll + 0x62D7D + 0x4);
         WriteCode((char*)dll + 0x62D7D, &jumpNV40, 4);
@@ -228,10 +266,6 @@ void Patch17474(int verbose)
         WriteCode((char*)dll + 0xD20F5, &jumpNV40, 4);
 
         // COPP
-        // 6A 01
-        // 5D
-        // 8B C5
-        // 89 86 C0 01 00 00
         WriteCode((char*)dll + 0xF44EA, "\x6A\x01\x5D\x8B\xC5\x89\x86\xC0\x01\x00\x00", 11);
 
         // G80
@@ -241,16 +275,9 @@ void Patch17474(int verbose)
         WriteCode((char*)dll + 0x1178C7, &jumpG80, 4);
 
         // vp50_ucode
-        // 6A 01
-        // 58
-        // 89 87 C8 00 00 00
         WriteCode((char*)dll + 0x1C4B5D, "\x6A\x01\x58\x89\x87\xC8\x00\x00\x00", 9);
 
         // fp50_ucode
-        // 6A 01
-        // 58
-        // 89 86 C8 00 00 00
-        // 57
         WriteCode((char*)dll + 0x1C697C, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
 
         // printf
