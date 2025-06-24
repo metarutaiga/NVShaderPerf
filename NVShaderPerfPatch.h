@@ -11,6 +11,7 @@
 extern const char* fileOutputFilename;
 extern void Patch10131(int verbose);
 extern void Patch17474(int verbose);
+extern void PatchRSX(int verbose);
 
 extern int DumpBinNV30VS(DWORD* nv30, int size);
 

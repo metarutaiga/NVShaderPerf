@@ -1,5 +1,9 @@
-#include <Windows.h>
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <malloc.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "NVShaderPerf.h"
 #include "NVShaderPerfPatch.h"
@@ -299,9 +303,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     switch (NULL) case NULL: {
         const char* version = "174.74";
         const wchar_t* folder = L"2.07.0804.1530";
-        if (gpu && gpu[2] == '3') {
-            version = "101.31";
-            folder = L"2.01.10000.0305";
+        if (gpu) {
+            if (gpu[2] == '3') {
+                version = "101.31";
+                folder = L"2.01.10000.0305";
+            }
+            else if (_stricmp(gpu, "RSX") == 0) {
+                version = "RSX Compiler";
+                folder = L"2.09.1109.0300";
+            }
         }
         NVShaderPerfQueryInterface NVSPQueryInterface = NVShaderPerfLoader(folder);
         if (NVSPQueryInterface == nullptr)
@@ -340,6 +350,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
         Patch10131(verbose);
         Patch17474(verbose);
+        PatchRSX(verbose);
 
         if (mrt)        result = NVShaderPerf.SetValue(MRTCount, mrt);
         if (output)     result = NVShaderPerf.SetValuePtr(OutputFile, output);
@@ -370,6 +381,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             DumpBinNV30VS((DWORD*)data, count);
                         }
                         else if (shaderType == HLSLFragmentProgram) {
+//                          DumpBinNV40PS((DWORD*)data, count);
+                            DumpBinG70PS((DWORD*)data, count);
                         }
                     }
                     if (_stricmp(gpu, "NV40") == 0) {
@@ -377,7 +390,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             DumpBinNV40VS((DWORD*)data, count);
                         }
                         else if (shaderType == HLSLFragmentProgram) {
-                            DumpBinNV40PS((DWORD*)data, count);
+//                          DumpBinNV40PS((DWORD*)data, count);
+                            DumpBinG70PS((DWORD*)data, count);
                         }
                     }
                     if (_stricmp(gpu, "G70") == 0) {

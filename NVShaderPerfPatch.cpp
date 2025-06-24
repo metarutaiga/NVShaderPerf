@@ -1,5 +1,9 @@
-#include <Windows.h>
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <malloc.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "NVShaderPerfPatch.h"
 
@@ -10,7 +14,7 @@ static int PatchPrintf(const char* format, ...)
 
     int length = vsnprintf(NULL, 0, format, args);
     char* buffer = (char*)malloc(length + 2);
-    vsnprintf(buffer, length + 2, format, args);
+    length = vsnprintf(buffer, length + 2, format, args);
     if (buffer && strncmp(buffer, "Called deriveFP", sizeof("Called deriveFP") - 1) == 0) {
         buffer[length + 0] = '\n';
         buffer[length + 1] = 0;
@@ -34,7 +38,7 @@ static int PatchFprintf(FILE* file, const char* format, ...)
 
     int length = vsnprintf(NULL, 0, format, args);
     char* buffer = (char*)malloc(length + 1);
-    vsnprintf(buffer, length + 1, format, args);
+    length = vsnprintf(buffer, length + 1, format, args);
     WriteString(buffer);
     free(buffer);
 
@@ -83,7 +87,7 @@ int DumpBinNV30VS(DWORD* nv30, int size)
 {
     DWORD convert[45];
     for (int i = 0; i < size / 4; i += 4) {
-        printf("%02x: %08x %08x %08x %08x\n", i, nv30[i + 0], nv30[i + 1], nv30[i + 2], nv30[i + 3]);
+        printf("%02x: %08lx %08lx %08lx %08lx\n", i, nv30[i + 0], nv30[i + 1], nv30[i + 2], nv30[i + 3]);
         ConvertNV30VS(convert, &nv30[i]);
         DecodeNV30VS(convert);
     }
@@ -125,7 +129,7 @@ int DumpBinNV40VS(DWORD* nv40, int size)
 {
     DWORD convert[50];
     for (int i = 0; i < size / 4; i += 4) {
-        printf("%02x: %08x %08x %08x %08x\n", i, nv40[i + 0], nv40[i + 1], nv40[i + 2], nv40[i + 3]);
+        printf("%02x: %08lx %08lx %08lx %08lx\n", i, nv40[i + 0], nv40[i + 1], nv40[i + 2], nv40[i + 3]);
         ConvertNV40VS(convert, &nv40[i]);
         DecodeNV40VS(convert);
     }
@@ -290,5 +294,14 @@ void Patch17474(int verbose)
 
         // Level
         memcpy((char*)dll + 0x2EA418, &verbose, 1);
+    }
+}
+
+void PatchRSX(int verbose)
+{
+    HMODULE dll = GetModuleHandleA("NVShaderPerf_RSX.dll");
+    if (dll) {
+        // Level
+        memcpy((char*)dll + 0x200A18, &verbose, 1);
     }
 }
