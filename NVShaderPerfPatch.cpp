@@ -1,6 +1,7 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <combaseapi.h>
 #include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -200,6 +201,55 @@ int DumpBinG80(DWORD* g80)
     return 0;
 }
 
+#define INTERFACE ID3DXBuffer
+DECLARE_INTERFACE_(ID3DXBuffer,IUnknown)
+{
+    /*** IUnknown methods ***/
+    STDMETHOD_(HRESULT,QueryInterface)(THIS_ REFIID riid, void** ppvObject) PURE;
+    STDMETHOD_(ULONG,AddRef)(THIS) PURE;
+    STDMETHOD_(ULONG,Release)(THIS) PURE;
+    /*** ID3DXBuffer methods ***/
+    STDMETHOD_(LPVOID,GetBufferPointer)(THIS) PURE;
+    STDMETHOD_(DWORD,GetBufferSize)(THIS) PURE;
+};
+#undef INTERFACE
+
+static HRESULT(__stdcall *D3DXCreateBuffer)(DWORD NumBytes, ID3DXBuffer** ppBuffer);
+static HRESULT(__stdcall *D3DXAssembleShaderFromFileA)(const char* pSrcFile, void* pDefines, void* pInclude, DWORD Flags, ID3DXBuffer** ppShader, void** ppErrorMsgs);
+static HRESULT __stdcall patchD3DXAssembleShaderFromFileA(const char* pSrcFile, void* pDefines, void* pInclude, DWORD Flags, ID3DXBuffer** ppShader, void** ppErrorMsgs)
+{   
+    FILE* file = nullptr;
+    fopen_s(&file, pSrcFile, "rb");
+    if (file) {
+        int version = 0;
+        fread(&version, sizeof(int), 1, file);
+
+        size_t size = 0;
+        ID3DXBuffer* shader = nullptr;
+        switch (version & 0xFFFF0000) {
+        case 0xFFFF0000:
+        case 0xFFFE0000:
+            fseek(file, 0, SEEK_END);
+            size = ftell(file);
+            fseek(file, 0, SEEK_SET);
+            D3DXCreateBuffer(DWORD(size), &shader);
+            fread(shader->GetBufferPointer(), 1, size, file);
+            break;
+        }
+        fclose(file);
+
+        if (shader) {
+            if (ppShader)
+                (*ppShader) = shader;
+            if (ppErrorMsgs)
+                (*ppErrorMsgs) = 0;
+            return S_OK;
+        }
+    }
+
+    return D3DXAssembleShaderFromFileA(pSrcFile, pDefines, pInclude, Flags, ppShader, ppErrorMsgs);
+}
+
 static void WriteCode(void* pvTarget, const void* pvSource, size_t nSize)
 {
     DWORD nOldP, nNewP;
@@ -238,6 +288,18 @@ void Patch10131(int verbose)
 
         // Level
         memcpy((char*)dll + 0x28E6B0, &verbose, 1);
+    }
+
+    dll = GetModuleHandleA("NVShaderPerf.dll");
+    if (dll) {
+        HMODULE d3dx9 = LoadLibraryA("d3dx9_30.dll");
+        if (d3dx9) {
+            (void*&)D3DXCreateBuffer = GetProcAddress(d3dx9, "D3DXCreateBuffer");
+            (void*&)D3DXAssembleShaderFromFileA = GetProcAddress(d3dx9, "D3DXAssembleShaderFromFileA");
+
+            int jump = (int)patchD3DXAssembleShaderFromFileA - ((int)dll + 0x4B7F + 0x4);
+            WriteCode((char*)dll + 0x4B7F, &jump, 4);
+        }
     }
 }
 
@@ -294,6 +356,25 @@ void Patch17474(int verbose)
 
         // Level
         memcpy((char*)dll + 0x2EA418, &verbose, 1);
+    }
+
+    dll = GetModuleHandleA("NVShaderPerf.dll");
+    if (dll) {
+        HMODULE d3dx9 = nullptr;
+        for (int i = 100; i >= 30; --i) {
+            char name[64];
+            snprintf(name, 64, "d3dx9_%d.dll", i);
+            d3dx9 = LoadLibraryA(name);
+            if (d3dx9)
+                break;
+        }
+        if (d3dx9) {
+            (void*&)D3DXCreateBuffer = GetProcAddress(d3dx9, "D3DXCreateBuffer");
+            (void*&)D3DXAssembleShaderFromFileA = GetProcAddress(d3dx9, "D3DXAssembleShaderFromFileA");
+
+            int jump = (int)patchD3DXAssembleShaderFromFileA - ((int)dll + 0x6277 + 0x4);
+            WriteCode((char*)dll + 0x6277, &jump, 4);
+        }
     }
 }
 

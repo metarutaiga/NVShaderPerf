@@ -150,6 +150,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 shaderType = HLSLVertexProgram;
             else if (strcmp(argv[i], "hlsl_ps") == 0)
                 shaderType = HLSLFragmentProgram;
+            else if (strcmp(argv[i], "d3d_ps") == 0)
+                shaderType = Direct3DPixelShader;
+            else if (strcmp(argv[i], "d3d_vs") == 0)
+                shaderType = Direct3DVertexShader;
+            else if (strcmp(argv[i], "d3d_bin") == 0)
+                shaderType = Direct3DByteCode;
             continue;
         }
         if (strcmp(arg, "-f") == 0 || strcmp(arg, "-function") == 0) {
@@ -352,6 +358,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         Patch17474(verbose);
         PatchRSX(verbose);
 
+        if (shaderType == Direct3DByteCode) {
+            FILE* file = nullptr;
+            fopen_s(&file, filename, "rb");
+            if (file) {
+                int version = 0;
+                fread(&version, sizeof(int), 1, file);
+                fclose(file);
+
+                switch (version & 0xFFFF0000) {
+                case 0xFFFF0000: shaderType = Direct3DPixelShader;  break;
+                case 0xFFFE0000: shaderType = Direct3DVertexShader; break;
+                }
+            }
+        }
+
         if (mrt)        result = NVShaderPerf.SetValue(MRTCount, mrt);
         if (output)     result = NVShaderPerf.SetValuePtr(OutputFile, output);
         if (error)      result = NVShaderPerf.SetValuePtr(ErrorFile, error);
@@ -412,7 +433,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
 
         switch (shaderType) {
-        case HLSLVertexProgram: {
+        case HLSLVertexProgram: 
+        case Direct3DVertexShader: 
+        case GLSLVertexProgram: 
+        case OpenGLVertexProgram: 
+        case CgVertexProgram: {
             int count = 0;
             VertexProgramResults* results = nullptr;
             result = NVShaderPerf.VertexProgramPerformance(filename, 0, &results, &count);
@@ -425,7 +450,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             result = NVShaderPerf.FreeVertexResults(results);
             break;
         }
-        case HLSLFragmentProgram: {
+        case HLSLFragmentProgram: 
+        case Direct3DPixelShader: 
+        case GLSLFragmentProgram: 
+        case OpenGLFragmentProgram: 
+        case CgFragmentProgram: {
             int count = 0;
             FragmentProgramResults* results = nullptr;
             result = NVShaderPerf.FragmentProgramPerformance(filename, 0, &results, &count);
