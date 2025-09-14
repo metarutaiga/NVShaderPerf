@@ -4,6 +4,7 @@
 #include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <tchar.h>
 
 #include "NVShaderPerf.h"
 #include "NVShaderPerfPatch.h"
@@ -47,15 +48,15 @@ union NVShaderPerf {
 };
 
 typedef void* (*NVShaderPerfQueryInterface)(DWORD hash);
-static NVShaderPerfQueryInterface NVShaderPerfLoader(const wchar_t* folder)
+static NVShaderPerfQueryInterface NVShaderPerfLoader(const _TCHAR* folder)
 {
-    wchar_t current[MAX_PATH];
-    wchar_t directory[MAX_PATH];
-    GetCurrentDirectoryW(MAX_PATH, current);
-    GetCurrentDirectoryW(MAX_PATH, directory);
-    wcscat_s(directory, MAX_PATH, L"\\");
-    wcscat_s(directory, MAX_PATH, folder);
-    SetCurrentDirectoryW(directory);
+    _TCHAR current[MAX_PATH];
+    _TCHAR directory[MAX_PATH];
+    GetCurrentDirectory(MAX_PATH, current);
+    GetCurrentDirectory(MAX_PATH, directory);
+    _tcscat_s(directory, MAX_PATH, _T("\\"));
+    _tcscat_s(directory, MAX_PATH, folder);
+    SetCurrentDirectory(directory);
 
     HMODULE dll = LoadLibraryA("NVShaderPerf.dll");
     if (dll == nullptr) {
@@ -79,7 +80,7 @@ static NVShaderPerfQueryInterface NVShaderPerfLoader(const wchar_t* folder)
         return nullptr;
     }
 
-    SetCurrentDirectoryW(current);
+    SetCurrentDirectory(current);
     return NVSPQueryInterface;
 }
 
@@ -307,16 +308,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     switch (NULL) case NULL: {
-        const char* version = "174.74";
-        const wchar_t* folder = L"2.07.0804.1530";
+        const _TCHAR* version = _T("174.74");
+        const _TCHAR* folder = _T("2.07.0804.1530");
         if (gpu) {
             if (gpu[2] == '3') {
-                version = "101.31";
-                folder = L"2.01.10000.0305";
+                version = _T("101.31");
+                folder = _T("2.01.10000.0305");
             }
             else if (_stricmp(gpu, "RSX") == 0) {
-                version = "RSX Compiler";
-                folder = L"2.09.1109.0300";
+                version = _T("RSX Compiler");
+                folder = _T("2.09.1109.0300");
             }
         }
         NVShaderPerfQueryInterface NVSPQueryInterface = NVShaderPerfLoader(folder);

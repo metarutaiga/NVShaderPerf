@@ -120,6 +120,7 @@ static int PatchDumpNV40PS(DWORD* nv40, int size)
             fwrite(nv40, 1, size, file);
             fclose(file);
         }
+        exit(0);
     }
     return DumpNV40PS(nv40, size);
 }
@@ -151,6 +152,7 @@ static int PatchDumpG70PS(DWORD* g70, int size)
             fwrite(g70, 1, size, file);
             fclose(file);
         }
+        exit(0);
     }
     return DumpG70PS(g70, size);
 }
@@ -199,6 +201,24 @@ int DumpBinG80(DWORD* g80)
         DumpG80(g80);
     }
     return 0;
+}
+
+static int (*SPA)(int type, const char* shader);
+static int PatchSPA(int type, const char* shader)
+{
+    if (fileOutputFilename) {
+        char temp[MAX_PATH];
+        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
+        FILE* file = nullptr;
+        fopen_s(&file, temp, "wb");
+        if (file) {
+            fprintf(file, "%s", shader);
+            fclose(file);
+        }        
+        exit(0);
+    }
+    printf("%s", shader);
+    return SPA(type, shader);
 }
 
 #define INTERFACE ID3DXBuffer
@@ -345,6 +365,11 @@ void Patch17474(int verbose)
 
         // fp50_ucode
         WriteCode((char*)dll + 0x1C697C, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
+
+        // SPA
+        (void*&)SPA = (char*)dll + 0x2380;
+        jumpG80 = (int)PatchSPA - ((int)dll + 0x1ECB + 0x4);
+        WriteCode((char*)dll + 0x1ECB, &jumpG80, 4);
 
         // printf
         static void* printf_impl = &PatchPrintf;
