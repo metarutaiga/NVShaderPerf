@@ -8,10 +8,28 @@
 
 #include "NVShaderPerfPatch.h"
 
+const char* fileOutputFilename;
+
+static FILE* PatchPrintfFile = nullptr;
 static int PatchPrintf(const char* format, ...)
 {
     va_list args;
     va_start(args, format);
+
+    if (PatchPrintfFile) {
+        if (strncmp(format, "end inst", 8) == 0) {
+            fclose(PatchPrintfFile);
+            PatchPrintfFile = nullptr;
+        }
+    }
+    if (PatchPrintfFile) {
+        if (strcmp(format, "%03d:Start\n") == 0) {
+            fseek(PatchPrintfFile, 0, SEEK_SET);
+        }
+        else {
+            vfprintf(PatchPrintfFile, format, args);
+        }
+    }
 
     int length = vsnprintf(NULL, 0, format, args);
     char* buffer = (char*)malloc(length + 2);
@@ -47,8 +65,6 @@ static int PatchFprintf(FILE* file, const char* format, ...)
 
     return length;
 }
-
-const char* fileOutputFilename;
 
 struct PatchNV30 {
     int PatchDumpNV30PS(DWORD* data);
@@ -203,6 +219,70 @@ int DumpBinG80(DWORD* g80)
     return 0;
 }
 
+static int (*RankineVS)(void* shader);
+static int PatchRankineVS(void* shader)
+{
+    if (fileOutputFilename) {
+        char temp[MAX_PATH];
+        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
+        fopen_s(&PatchPrintfFile, temp, "wb");
+    }
+    int result = RankineVS(shader);
+    if (PatchPrintfFile) {
+        fclose(PatchPrintfFile);
+        PatchPrintfFile = nullptr;
+    }
+    return result;
+}
+
+static int (*RankinePS)(void* shader, int count, int type);
+static int PatchRankinePS(void* shader, int count, int type)
+{
+    if (fileOutputFilename && type == 1) {
+        char temp[MAX_PATH];
+        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
+        fopen_s(&PatchPrintfFile, temp, "wb");
+    }
+    int result = RankinePS(shader, count, type);
+    if (PatchPrintfFile) {
+        fclose(PatchPrintfFile);
+        PatchPrintfFile = nullptr;
+    }
+    return result;
+}
+
+static int (*CurieVS)(void* shader);
+static int PatchCurieVS(void* shader)
+{
+    if (fileOutputFilename) {
+        char temp[MAX_PATH];
+        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
+        fopen_s(&PatchPrintfFile, temp, "wb");
+    }
+    int result = CurieVS(shader);
+    if (PatchPrintfFile) {
+        fclose(PatchPrintfFile);
+        PatchPrintfFile = nullptr;
+    }
+    return result;
+}
+
+static int (*CuriePS)(void* shader, int count, int type);
+static int PatchCuriePS(void* shader, int count, int type)
+{
+    if (fileOutputFilename && type == 1) {
+        char temp[MAX_PATH];
+        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
+        fopen_s(&PatchPrintfFile, temp, "wb");
+    }
+    int result = CuriePS(shader, count, type);
+    if (PatchPrintfFile) {
+        fclose(PatchPrintfFile);
+        PatchPrintfFile = nullptr;
+    }
+    return result;
+}
+
 static int (*SPA)(int type, const char* shader);
 static int PatchSPA(int type, const char* shader)
 {
@@ -215,9 +295,11 @@ static int PatchSPA(int type, const char* shader)
             fprintf(file, "%s", shader);
             fclose(file);
         }        
-        exit(0);
     }
     printf("%s", shader);
+    if (fileOutputFilename) {
+        exit(0);
+    }
     return SPA(type, shader);
 }
 
@@ -298,6 +380,18 @@ void Patch10131(int verbose)
         jumpNV30 = (int)PatchDumpNV30VS - ((int)dll + 0xAB5C5 + 0x4);
         WriteCode((char*)dll + 0xAB5C5, &jumpNV30, 4);
 
+        // Rankine - VS
+        (void*&)RankineVS = (char*)dll + 0xAB650;
+        jumpNV30 = (int)PatchRankineVS - ((int)dll + 0x12663C + 0x4);
+        WriteCode((char*)dll + 0x12663C, &jumpNV30, 4);
+        jumpNV30 = (int)PatchRankineVS;
+        WriteCode((char*)dll + 0x1265C5, &jumpNV30, 4);
+
+        // Rankine - PS
+        (void*&)RankinePS = (char*)dll + 0xB2620;
+        jumpNV30 = (int)PatchRankinePS - ((int)dll + 0x5D958 + 0x4);
+        WriteCode((char*)dll + 0x5D958, &jumpNV30, 4);
+
         // printf
         static void* printf_impl = &PatchPrintf;
         WriteCode((char*)dll + 0x1CD0E0, &printf_impl, sizeof(void*));
@@ -365,6 +459,18 @@ void Patch17474(int verbose)
 
         // fp50_ucode
         WriteCode((char*)dll + 0x1C697C, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
+
+        // Curie - VS
+        (void*&)CurieVS = (char*)dll + 0xD2170;
+        jumpNV40 = (int)PatchCurieVS - ((int)dll + 0x12051E + 0x4);
+        WriteCode((char*)dll + 0x12051E, &jumpNV40, 4);
+        jumpNV40 = (int)PatchCurieVS;
+        WriteCode((char*)dll + 0x1204A7, &jumpNV40, 4);
+
+        // Curie - PS
+        (void*&)CuriePS = (char*)dll + 0x1062A0;
+        jumpNV40 = (int)PatchCuriePS - ((int)dll + 0x9ED7F + 0x4);
+        WriteCode((char*)dll + 0x9ED7F, &jumpNV40, 4);
 
         // SPA
         (void*&)SPA = (char*)dll + 0x2380;

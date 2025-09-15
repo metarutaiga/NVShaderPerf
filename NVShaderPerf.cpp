@@ -359,7 +359,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         Patch17474(verbose);
         PatchRSX(verbose);
 
-        if (shaderType == Direct3DByteCode) {
+        if (shaderType == Direct3DByteCode && filename) {
             FILE* file = nullptr;
             fopen_s(&file, filename, "rb");
             if (file) {
@@ -398,34 +398,41 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 fread(data, 1, count, file);
                 fclose(file);
                 if (gpu) {
-                    if (_stricmp(gpu, "NV30") == 0) {
-                        if (shaderType == HLSLVertexProgram) {
-                            DumpBinNV30VS((DWORD*)data, count);
+                    switch (shaderType) {
+                    case HLSLVertexProgram: 
+                    case Direct3DVertexShader: 
+                    case GLSLVertexProgram: 
+                    case OpenGLVertexProgram: 
+                    case CgVertexProgram: {
+                        if (gpu[2] == '3') {
+                             DumpBinNV30VS((DWORD*)data, count);
                         }
-                        else if (shaderType == HLSLFragmentProgram) {
-//                          DumpBinNV40PS((DWORD*)data, count);
-                            DumpBinG70PS((DWORD*)data, count);
+                        else if (gpu[2] == '4' || gpu[1] == '7') {
+                             DumpBinNV40VS((DWORD*)data, count);
                         }
+                        else if (gpu[1] == '8') {
+                             DumpBinG80((DWORD*)data);
+                        }
+                        break;
                     }
-                    if (_stricmp(gpu, "NV40") == 0) {
-                        if (shaderType == HLSLVertexProgram) {
-                            DumpBinNV40VS((DWORD*)data, count);
+                    case HLSLFragmentProgram: 
+                    case Direct3DPixelShader: 
+                    case GLSLFragmentProgram: 
+                    case OpenGLFragmentProgram: 
+                    case CgFragmentProgram: {
+                        if (gpu[2] == '3') {
+                             DumpBinG70PS((DWORD*)data, count);
                         }
-                        else if (shaderType == HLSLFragmentProgram) {
-//                          DumpBinNV40PS((DWORD*)data, count);
-                            DumpBinG70PS((DWORD*)data, count);
+                        else if (gpu[2] == '4' || gpu[1] == '7') {
+                             DumpBinG70PS((DWORD*)data, count);
                         }
+                        else if (gpu[1] == '8') {
+                             DumpBinG80((DWORD*)data);
+                        }
+                        break;
                     }
-                    if (_stricmp(gpu, "G70") == 0) {
-                        if (shaderType == HLSLVertexProgram) {
-                            DumpBinNV40VS((DWORD*)data, count);
-                        }
-                        else if (shaderType == HLSLFragmentProgram) {
-                            DumpBinG70PS((DWORD*)data, count);
-                        }
-                    }
-                    if (_stricmp(gpu, "G80") == 0) {
-                        DumpBinG80((DWORD*)data);
+                    default:
+                        break;
                     }
                 }
                 free(data);
