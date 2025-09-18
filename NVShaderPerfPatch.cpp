@@ -26,6 +26,9 @@ static int PatchPrintf(const char* format, ...)
         if (strcmp(format, "%03d:Start\n") == 0) {
             fseek(PatchPrintfFile, 0, SEEK_SET);
         }
+//      else if (strncmp(format, "%03d:  ", 7) == 0) {
+//          vfprintf(PatchPrintfFile, format + 7, args);
+//      }
         else {
             vfprintf(PatchPrintfFile, format, args);
         }
@@ -74,7 +77,7 @@ static int (*DumpNV30VS)(DWORD* output, DWORD* instruction);
 static int PatchDumpNV30VS(DWORD* output, DWORD* instruction)
 {
     int result = DumpNV30VS(output, instruction);
-    if (fileOutputFilename) {
+    if (fileOutputFilename && strstr(fileOutputFilename, ".asm") == nullptr) {
         if (outputFileNV30 == nullptr) {
             fopen_s(&outputFileNV30, fileOutputFilename, "wb");
         }
@@ -87,7 +90,7 @@ static int PatchDumpNV30VS(DWORD* output, DWORD* instruction)
 static int (PatchNV30::*DumpNV30PS)(DWORD* data);
 int PatchNV30::PatchDumpNV30PS(DWORD* data)
 {
-    if (fileOutputFilename) {
+    if (fileOutputFilename && strstr(fileOutputFilename, ".asm") == nullptr) {
         if (outputFileNV30 == nullptr) {
             fopen_s(&outputFileNV30, fileOutputFilename, "wb");
         }
@@ -117,7 +120,7 @@ static int PatchDumpNV40VS(DWORD* output, DWORD* instruction)
 {
     int result = DumpNV40VS(output, instruction);
     if (fileOutputFilename) {
-        if (outputFileNV40 == nullptr) {
+        if (outputFileNV40 == nullptr && strstr(fileOutputFilename, ".asm") == nullptr) {
             fopen_s(&outputFileNV40, fileOutputFilename, "wb");
         }
         if (outputFileNV40) {
@@ -130,11 +133,13 @@ static int (*DumpNV40PS)(DWORD* nv40, int size);
 static int PatchDumpNV40PS(DWORD* nv40, int size)
 {
     if (fileOutputFilename) {
-        FILE* file = nullptr;
-        fopen_s(&file, fileOutputFilename, "wb");
-        if (file) {
-            fwrite(nv40, 1, size, file);
-            fclose(file);
+        if (strstr(fileOutputFilename, ".asm") == nullptr) {
+            FILE* file = nullptr;
+            fopen_s(&file, fileOutputFilename, "wb");
+            if (file) {
+                fwrite(nv40, 1, size, file);
+                fclose(file);
+            }
         }
         exit(0);
     }
@@ -162,11 +167,13 @@ static int (*DumpG70PS)(DWORD* g70, int size);
 static int PatchDumpG70PS(DWORD* g70, int size)
 {
     if (fileOutputFilename) {
-        FILE* file = nullptr;
-        fopen_s(&file, fileOutputFilename, "wb");
-        if (file) {
-            fwrite(g70, 1, size, file);
-            fclose(file);
+        if (strstr(fileOutputFilename, ".asm") == nullptr) {
+            FILE* file = nullptr;
+            fopen_s(&file, fileOutputFilename, "wb");
+            if (file) {
+                fwrite(g70, 1, size, file);
+                fclose(file);
+            }
         }
         exit(0);
     }
@@ -181,24 +188,26 @@ int DumpBinG70PS(DWORD* g70, int size)
 static int (*DumpG80)(DWORD* g80);
 static int PatchDumpG80(DWORD* g80)
 {
-    if (fileOutputFilename) {
-        FILE* file = nullptr;
-        fopen_s(&file, fileOutputFilename, "wb");
-        if (file) {
-            DWORD* data = (DWORD*)malloc(g80[6]);
-            if (data) {
-                memcpy(data, g80, g80[6]);
-                for (DWORD i = 0; i < WORD(data[2]); ++i) {
-                    DWORD offset = data[10 + i * 8];
-                    if (offset) {
-                        offset -= (DWORD)g80;
-                        data[10 + i * 8] = offset;
+    if (fileOutputFilename && 0) {
+        if (strstr(fileOutputFilename, ".asm") == nullptr) {
+            FILE* file = nullptr;
+            fopen_s(&file, fileOutputFilename, "wb");
+            if (file) {
+                DWORD* data = (DWORD*)malloc(g80[6]);
+                if (data) {
+                    memcpy(data, g80, g80[6]);
+                    for (DWORD i = 0; i < WORD(data[2]); ++i) {
+                        DWORD offset = data[10 + i * 8];
+                        if (offset) {
+                            offset -= (DWORD)g80;
+                            data[10 + i * 8] = offset;
+                        }
                     }
+                    fwrite(data, 1, g80[6], file);
+                    free(data);
                 }
-                fwrite(data, 1, g80[6], file);
-                free(data);
+                fclose(file);
             }
-            fclose(file);
         }
     }
     return DumpG80(g80);
@@ -222,10 +231,8 @@ int DumpBinG80(DWORD* g80)
 static int (*RankineVS)(void* shader);
 static int PatchRankineVS(void* shader)
 {
-    if (fileOutputFilename) {
-        char temp[MAX_PATH];
-        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
-        fopen_s(&PatchPrintfFile, temp, "wb");
+    if (fileOutputFilename && strstr(fileOutputFilename, ".asm")) {
+        fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
     }
     int result = RankineVS(shader);
     if (PatchPrintfFile) {
@@ -238,10 +245,8 @@ static int PatchRankineVS(void* shader)
 static int (*RankinePS)(void* shader, int count, int type);
 static int PatchRankinePS(void* shader, int count, int type)
 {
-    if (fileOutputFilename && type == 1) {
-        char temp[MAX_PATH];
-        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
-        fopen_s(&PatchPrintfFile, temp, "wb");
+    if (fileOutputFilename && type == 1 && strstr(fileOutputFilename, ".asm")) {
+        fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
     }
     int result = RankinePS(shader, count, type);
     if (PatchPrintfFile) {
@@ -254,10 +259,8 @@ static int PatchRankinePS(void* shader, int count, int type)
 static int (*CurieVS)(void* shader);
 static int PatchCurieVS(void* shader)
 {
-    if (fileOutputFilename) {
-        char temp[MAX_PATH];
-        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
-        fopen_s(&PatchPrintfFile, temp, "wb");
+    if (fileOutputFilename && strstr(fileOutputFilename, ".asm")) {
+        fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
     }
     int result = CurieVS(shader);
     if (PatchPrintfFile) {
@@ -270,10 +273,8 @@ static int PatchCurieVS(void* shader)
 static int (*CuriePS)(void* shader, int count, int type);
 static int PatchCuriePS(void* shader, int count, int type)
 {
-    if (fileOutputFilename && type == 1) {
-        char temp[MAX_PATH];
-        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
-        fopen_s(&PatchPrintfFile, temp, "wb");
+    if (fileOutputFilename && type == 1 && strstr(fileOutputFilename, ".asm")) {
+        fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
     }
     int result = CuriePS(shader, count, type);
     if (PatchPrintfFile) {
@@ -286,20 +287,16 @@ static int PatchCuriePS(void* shader, int count, int type)
 static int (*SPA)(int type, const char* shader);
 static int PatchSPA(int type, const char* shader)
 {
-    if (fileOutputFilename) {
-        char temp[MAX_PATH];
-        snprintf(temp, MAX_PATH, "%s.asm", fileOutputFilename);
+    if (fileOutputFilename && strstr(fileOutputFilename, ".asm")) {
         FILE* file = nullptr;
-        fopen_s(&file, temp, "wb");
+        fopen_s(&file, fileOutputFilename, "wb");
         if (file) {
             fprintf(file, "%s", shader);
             fclose(file);
         }        
-    }
-    printf("%s", shader);
-    if (fileOutputFilename) {
         exit(0);
     }
+    printf("%s", shader);
     return SPA(type, shader);
 }
 

@@ -264,6 +264,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 WriteString("Invalid Parameter\n");
                 return 0;
             }
+            verbose = 100;
             fileOutputFilename = argv[i];
             continue;
         }
