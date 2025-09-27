@@ -3,10 +3,37 @@
 #include <windows.h>
 #include <combaseapi.h>
 #include <malloc.h>
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "NVShaderPerfPatch.h"
+
+#define INTERFACE ID3DXBuffer
+DECLARE_INTERFACE_(ID3DXBuffer,IUnknown)
+{
+    /*** IUnknown methods ***/
+    STDMETHOD_(HRESULT,QueryInterface)(THIS_ REFIID riid, void** ppvObject) PURE;
+    STDMETHOD_(ULONG,AddRef)(THIS) PURE;
+    STDMETHOD_(ULONG,Release)(THIS) PURE;
+    /*** ID3DXBuffer methods ***/
+    STDMETHOD_(LPVOID,GetBufferPointer)(THIS) PURE;
+    STDMETHOD_(DWORD,GetBufferSize)(THIS) PURE;
+};
+#undef INTERFACE
+
+static HRESULT(__stdcall *D3DXCreateBuffer)(DWORD NumBytes, ID3DXBuffer** ppBuffer);
+
+const void* inputMemoryData;
+size_t inputMemorySize;
+
+bool outputMemoryEnable;
+char* outputMemoryData;
+size_t outputMemorySize;
+
+void* outputMemoryBlob;
+
+jmp_buf terminateJump;
 
 const char* fileOutputFilename;
 
@@ -45,6 +72,21 @@ static int PatchPrintf(const char* format, ...)
         buffer[length + 0] = '\n';
         buffer[length + 1] = 0;
     }
+
+    if (outputMemoryEnable) {
+        if (strncmp(format, "end inst", 8) == 0) {
+            outputMemoryEnable = false;
+        }
+        else if (strcmp(format, "%03d:Start\n") == 0) {
+            outputMemorySize = 0;
+        }
+        else {
+            outputMemoryData = (char*)realloc(outputMemoryData, outputMemorySize + length);
+            memcpy(outputMemoryData + outputMemorySize, buffer, length);
+            outputMemorySize += length;
+        }
+    }
+
     WriteString(buffer);
     free(buffer);
 
@@ -132,6 +174,9 @@ static int PatchDumpNV40VS(DWORD* output, DWORD* instruction)
 static int (*DumpNV40PS)(DWORD* nv40, int size);
 static int PatchDumpNV40PS(DWORD* nv40, int size)
 {
+    if (inputMemoryData) {
+        longjmp(terminateJump, 1);
+    }
     if (fileOutputFilename) {
         if (strstr(fileOutputFilename, ".asm") == nullptr) {
             FILE* file = nullptr;
@@ -166,6 +211,9 @@ int DumpBinNV40PS(DWORD* nv40, int size)
 static int (*DumpG70PS)(DWORD* g70, int size);
 static int PatchDumpG70PS(DWORD* g70, int size)
 {
+    if (inputMemoryData) {
+        longjmp(terminateJump, 1);
+    }
     if (fileOutputFilename) {
         if (strstr(fileOutputFilename, ".asm") == nullptr) {
             FILE* file = nullptr;
@@ -231,6 +279,9 @@ int DumpBinG80(DWORD* g80)
 static int (*RankineVS)(void* shader);
 static int PatchRankineVS(void* shader)
 {
+    if (inputMemoryData) {
+        outputMemoryEnable = true;
+    }
     if (fileOutputFilename && strstr(fileOutputFilename, ".asm")) {
         fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
     }
@@ -239,12 +290,26 @@ static int PatchRankineVS(void* shader)
         fclose(PatchPrintfFile);
         PatchPrintfFile = nullptr;
     }
+    outputMemoryEnable = false;
+    if (outputMemoryData) {
+        ID3DXBuffer* blob = nullptr;
+        D3DXCreateBuffer(DWORD(outputMemorySize), &blob);
+        if (blob) {
+            memcpy(blob->GetBufferPointer(), outputMemoryData, outputMemorySize); 
+        }        
+        outputMemoryBlob = blob;
+
+        longjmp(terminateJump, 1);
+    }
     return result;
 }
 
 static int (*RankinePS)(void* shader, int count, int type);
 static int PatchRankinePS(void* shader, int count, int type)
 {
+    if (inputMemoryData && type == 1) {
+        outputMemoryEnable = true;
+    }
     if (fileOutputFilename && type == 1 && strstr(fileOutputFilename, ".asm")) {
         fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
     }
@@ -253,12 +318,27 @@ static int PatchRankinePS(void* shader, int count, int type)
         fclose(PatchPrintfFile);
         PatchPrintfFile = nullptr;
     }
+    outputMemoryEnable = false;
+    if (outputMemoryData) {
+        ID3DXBuffer* blob = nullptr;
+        D3DXCreateBuffer(DWORD(outputMemorySize), &blob);
+        if (blob) {
+            memcpy(blob->GetBufferPointer(), outputMemoryData, outputMemorySize); 
+        }        
+        outputMemoryBlob = blob;
+
+        longjmp(terminateJump, 1);
+    }
     return result;
 }
 
 static int (*CurieVS)(void* shader);
 static int PatchCurieVS(void* shader)
 {
+    if (inputMemoryData) {
+        outputMemoryEnable = true;
+    }
+    outputMemoryEnable = inputMemoryData != nullptr;
     if (fileOutputFilename && strstr(fileOutputFilename, ".asm")) {
         fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
     }
@@ -267,12 +347,26 @@ static int PatchCurieVS(void* shader)
         fclose(PatchPrintfFile);
         PatchPrintfFile = nullptr;
     }
+    outputMemoryEnable = false;
+    if (outputMemoryData) {
+        ID3DXBuffer* blob = nullptr;
+        D3DXCreateBuffer(DWORD(outputMemorySize), &blob);
+        if (blob) {
+            memcpy(blob->GetBufferPointer(), outputMemoryData, outputMemorySize); 
+        }        
+        outputMemoryBlob = blob;
+
+        longjmp(terminateJump, 1);
+    }
     return result;
 }
 
 static int (*CuriePS)(void* shader, int count, int type);
 static int PatchCuriePS(void* shader, int count, int type)
 {
+    if (inputMemoryData && type == 1) {
+        outputMemoryEnable = true;
+    }
     if (fileOutputFilename && type == 1 && strstr(fileOutputFilename, ".asm")) {
         fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
     }
@@ -281,42 +375,67 @@ static int PatchCuriePS(void* shader, int count, int type)
         fclose(PatchPrintfFile);
         PatchPrintfFile = nullptr;
     }
+    outputMemoryEnable = false;
+    if (outputMemoryData) {
+        ID3DXBuffer* blob = nullptr;
+        D3DXCreateBuffer(DWORD(outputMemorySize), &blob);
+        if (blob) {
+            memcpy(blob->GetBufferPointer(), outputMemoryData, outputMemorySize); 
+        }        
+        outputMemoryBlob = blob;
+
+        longjmp(terminateJump, 1);
+    }
     return result;
 }
 
 static int (*SPA)(int type, const char* shader);
 static int PatchSPA(int type, const char* shader)
 {
+    if (inputMemoryData) {
+        size_t length = strlen(shader);
+
+        ID3DXBuffer* blob = nullptr;
+        D3DXCreateBuffer(DWORD(length), &blob);
+        if (blob) {
+            memcpy(blob->GetBufferPointer(), shader, length); 
+        }        
+        outputMemoryBlob = blob;
+
+        longjmp(terminateJump, 1);
+    }
     if (fileOutputFilename && strstr(fileOutputFilename, ".asm")) {
         FILE* file = nullptr;
         fopen_s(&file, fileOutputFilename, "wb");
         if (file) {
             fprintf(file, "%s", shader);
             fclose(file);
-        }        
+        }
         exit(0);
     }
     printf("%s", shader);
     return SPA(type, shader);
 }
 
-#define INTERFACE ID3DXBuffer
-DECLARE_INTERFACE_(ID3DXBuffer,IUnknown)
-{
-    /*** IUnknown methods ***/
-    STDMETHOD_(HRESULT,QueryInterface)(THIS_ REFIID riid, void** ppvObject) PURE;
-    STDMETHOD_(ULONG,AddRef)(THIS) PURE;
-    STDMETHOD_(ULONG,Release)(THIS) PURE;
-    /*** ID3DXBuffer methods ***/
-    STDMETHOD_(LPVOID,GetBufferPointer)(THIS) PURE;
-    STDMETHOD_(DWORD,GetBufferSize)(THIS) PURE;
-};
-#undef INTERFACE
-
-static HRESULT(__stdcall *D3DXCreateBuffer)(DWORD NumBytes, ID3DXBuffer** ppBuffer);
 static HRESULT(__stdcall *D3DXAssembleShaderFromFileA)(const char* pSrcFile, void* pDefines, void* pInclude, DWORD Flags, ID3DXBuffer** ppShader, void** ppErrorMsgs);
 static HRESULT __stdcall patchD3DXAssembleShaderFromFileA(const char* pSrcFile, void* pDefines, void* pInclude, DWORD Flags, ID3DXBuffer** ppShader, void** ppErrorMsgs)
-{   
+{
+    if (inputMemoryData) {
+        ID3DXBuffer* blob = nullptr;
+        D3DXCreateBuffer(DWORD(inputMemorySize), &blob);
+        if (blob) {
+            memcpy(blob->GetBufferPointer(), inputMemoryData, inputMemorySize); 
+        }
+
+        if (blob) {
+            if (ppShader)
+                (*ppShader) = blob;
+            if (ppErrorMsgs)
+                (*ppErrorMsgs) = 0;
+            return S_OK;
+        }
+    }
+
     FILE* file = nullptr;
     fopen_s(&file, pSrcFile, "rb");
     if (file) {
@@ -324,22 +443,24 @@ static HRESULT __stdcall patchD3DXAssembleShaderFromFileA(const char* pSrcFile, 
         fread(&version, sizeof(int), 1, file);
 
         size_t size = 0;
-        ID3DXBuffer* shader = nullptr;
+        ID3DXBuffer* blob = nullptr;
         switch (version & 0xFFFF0000) {
         case 0xFFFF0000:
         case 0xFFFE0000:
             fseek(file, 0, SEEK_END);
             size = ftell(file);
             fseek(file, 0, SEEK_SET);
-            D3DXCreateBuffer(DWORD(size), &shader);
-            fread(shader->GetBufferPointer(), 1, size, file);
+            D3DXCreateBuffer(DWORD(size), &blob);
+            if (blob) {
+                fread(blob->GetBufferPointer(), 1, size, file);
+            }
             break;
         }
         fclose(file);
 
-        if (shader) {
+        if (blob) {
             if (ppShader)
-                (*ppShader) = shader;
+                (*ppShader) = blob;
             if (ppErrorMsgs)
                 (*ppErrorMsgs) = 0;
             return S_OK;

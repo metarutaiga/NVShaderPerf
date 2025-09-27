@@ -8,7 +8,15 @@
 #define WriteString OutputDebugStringA
 #endif
 
+extern const void* inputMemoryData;
+extern size_t inputMemorySize;
+
+extern void* outputMemoryBlob;
+
+extern jmp_buf terminateJump;
+
 extern const char* fileOutputFilename;
+
 extern void Patch10131(int verbose);
 extern void Patch17474(int verbose);
 extern void PatchRSX(int verbose);

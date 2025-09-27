@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <malloc.h>
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <tchar.h>
@@ -479,6 +480,84 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             break;
         }
     }
+
+    return 0;
+}
+
+#pragma comment(linker, "/export:NVCompileShader=_NVCompileShader@20")
+
+extern "C"
+HRESULT WINAPI NVCompileShader(const void* shader, size_t size, const char* folder, const char* gpu, void** binary)
+{
+    NVShaderPerfQueryInterface NVSPQueryInterface = NVShaderPerfLoader(folder);
+    if (NVSPQueryInterface == nullptr)
+        return 0x80000000 + __LINE__;
+    for (int i = 0; i < 14; ++i) {
+        NVShaderPerf.functions[i] = NVSPQueryInterface(NVShaderPerf.hashes[i]);
+    }
+    NVSPResult unknown;
+    NVSPResult result;
+    result = NVShaderPerf.NVSPInit(&unknown);
+    result = NVShaderPerf.SetOutputFunction([](const char* text) {
+        WriteString(text);
+        size_t length = strlen(text);
+        if (length && text[length - 1] != '\n')
+            WriteString("\n");
+    });
+
+    int verbose = 100;
+    Patch10131(verbose);
+    Patch17474(verbose);
+    PatchRSX(verbose);
+
+    int version = 0;
+    memcpy(&version, shader, sizeof(int));
+
+    enum ShaderType shaderType = (enum ShaderType)0;
+    if (version == 'CBXD') {
+        int* dxbc = (int*)shader;
+        int* rdef = nullptr;
+        for (size_t i = 0; i < size / 4; ++i) {
+            if (dxbc[i] == 'FEDR') {
+                rdef = &dxbc[i];
+            }
+        }
+        if (rdef) {
+            version = rdef[6];
+        }
+    }
+    switch (version & 0xFFFF0000) {
+    case 0xFFFF0000: shaderType = Direct3DPixelShader;  break;
+    case 0xFFFE0000: shaderType = Direct3DVertexShader; break;
+    }
+    result = NVShaderPerf.SetValue(ShaderType, shaderType);
+    result = NVShaderPerf.SetValuePtr(GPUName, gpu);
+
+    if (setjmp(terminateJump) == 0) {
+        inputMemoryData = shader;
+        inputMemorySize = size;
+        switch (shaderType) {
+        case Direct3DVertexShader: {
+            int count = 0;
+            VertexProgramResults* results = nullptr;
+            result = NVShaderPerf.VertexProgramPerformance("NVShaderPerf.dll", 0, &results, &count);
+            result = NVShaderPerf.FreeVertexResults(results);
+            break;
+        }
+        case Direct3DPixelShader: {
+            int count = 0;
+            FragmentProgramResults* results = nullptr;
+            result = NVShaderPerf.FragmentProgramPerformance("NVShaderPerf.dll", 0, &results, &count);
+            result = NVShaderPerf.FreeFragmentResults(results);
+        }
+        default:
+            break;
+        }
+    }
+
+    if (outputMemoryBlob == nullptr)
+        return 0x80000000 +  __LINE__;
+    (*binary) = outputMemoryBlob;
 
     return 0;
 }
