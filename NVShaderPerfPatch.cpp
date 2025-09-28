@@ -73,7 +73,7 @@ static int PatchPrintf(const char* format, ...)
         buffer[length + 1] = 0;
     }
 
-    if (outputMemoryEnable) {
+    if (outputMemoryEnable && buffer) {
         if (strncmp(format, "end inst", 8) == 0) {
             outputMemoryEnable = false;
         }
@@ -281,6 +281,7 @@ static int PatchRankineVS(void* shader)
 {
     if (inputMemoryData) {
         outputMemoryEnable = true;
+        outputMemorySize = 0;
     }
     if (fileOutputFilename && strstr(fileOutputFilename, ".asm")) {
         fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
@@ -291,16 +292,6 @@ static int PatchRankineVS(void* shader)
         PatchPrintfFile = nullptr;
     }
     outputMemoryEnable = false;
-    if (outputMemoryData) {
-        ID3DXBuffer* blob = nullptr;
-        D3DXCreateBuffer(DWORD(outputMemorySize), &blob);
-        if (blob) {
-            memcpy(blob->GetBufferPointer(), outputMemoryData, outputMemorySize); 
-        }        
-        outputMemoryBlob = blob;
-
-        longjmp(terminateJump, 1);
-    }
     return result;
 }
 
@@ -309,6 +300,7 @@ static int PatchRankinePS(void* shader, int count, int type)
 {
     if (inputMemoryData && type == 1) {
         outputMemoryEnable = true;
+        outputMemorySize = 0;
     }
     if (fileOutputFilename && type == 1 && strstr(fileOutputFilename, ".asm")) {
         fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
@@ -319,16 +311,6 @@ static int PatchRankinePS(void* shader, int count, int type)
         PatchPrintfFile = nullptr;
     }
     outputMemoryEnable = false;
-    if (outputMemoryData) {
-        ID3DXBuffer* blob = nullptr;
-        D3DXCreateBuffer(DWORD(outputMemorySize), &blob);
-        if (blob) {
-            memcpy(blob->GetBufferPointer(), outputMemoryData, outputMemorySize); 
-        }        
-        outputMemoryBlob = blob;
-
-        longjmp(terminateJump, 1);
-    }
     return result;
 }
 
@@ -337,6 +319,7 @@ static int PatchCurieVS(void* shader)
 {
     if (inputMemoryData) {
         outputMemoryEnable = true;
+        outputMemorySize = 0;
     }
     outputMemoryEnable = inputMemoryData != nullptr;
     if (fileOutputFilename && strstr(fileOutputFilename, ".asm")) {
@@ -348,16 +331,6 @@ static int PatchCurieVS(void* shader)
         PatchPrintfFile = nullptr;
     }
     outputMemoryEnable = false;
-    if (outputMemoryData) {
-        ID3DXBuffer* blob = nullptr;
-        D3DXCreateBuffer(DWORD(outputMemorySize), &blob);
-        if (blob) {
-            memcpy(blob->GetBufferPointer(), outputMemoryData, outputMemorySize); 
-        }        
-        outputMemoryBlob = blob;
-
-        longjmp(terminateJump, 1);
-    }
     return result;
 }
 
@@ -366,6 +339,7 @@ static int PatchCuriePS(void* shader, int count, int type)
 {
     if (inputMemoryData && type == 1) {
         outputMemoryEnable = true;
+        outputMemorySize = 0;
     }
     if (fileOutputFilename && type == 1 && strstr(fileOutputFilename, ".asm")) {
         fopen_s(&PatchPrintfFile, fileOutputFilename, "wb");
@@ -376,16 +350,6 @@ static int PatchCuriePS(void* shader, int count, int type)
         PatchPrintfFile = nullptr;
     }
     outputMemoryEnable = false;
-    if (outputMemoryData) {
-        ID3DXBuffer* blob = nullptr;
-        D3DXCreateBuffer(DWORD(outputMemorySize), &blob);
-        if (blob) {
-            memcpy(blob->GetBufferPointer(), outputMemoryData, outputMemorySize); 
-        }        
-        outputMemoryBlob = blob;
-
-        longjmp(terminateJump, 1);
-    }
     return result;
 }
 
@@ -393,14 +357,9 @@ static int (*SPA)(int type, const char* shader);
 static int PatchSPA(int type, const char* shader)
 {
     if (inputMemoryData) {
-        size_t length = strlen(shader);
-
-        ID3DXBuffer* blob = nullptr;
-        D3DXCreateBuffer(DWORD(length), &blob);
-        if (blob) {
-            memcpy(blob->GetBufferPointer(), shader, length); 
-        }        
-        outputMemoryBlob = blob;
+        outputMemorySize = strlen(shader);
+        outputMemoryData = (char*)malloc(outputMemorySize);
+        memcpy(outputMemoryData, shader, outputMemorySize);
 
         longjmp(terminateJump, 1);
     }
@@ -415,6 +374,16 @@ static int PatchSPA(int type, const char* shader)
     }
     printf("%s", shader);
     return SPA(type, shader);
+}
+
+void CreateMemoryBlob()
+{
+    ID3DXBuffer* blob = nullptr;
+    D3DXCreateBuffer(DWORD(outputMemorySize), &blob);
+    if (blob) {
+        memcpy(blob->GetBufferPointer(), outputMemoryData, outputMemorySize); 
+    }        
+    outputMemoryBlob = blob;
 }
 
 static HRESULT(__stdcall *D3DXAssembleShaderFromFileA)(const char* pSrcFile, void* pDefines, void* pInclude, DWORD Flags, ID3DXBuffer** ppShader, void** ppErrorMsgs);
@@ -509,6 +478,21 @@ void Patch10131(int verbose)
         (void*&)RankinePS = (char*)dll + 0xB2620;
         jumpNV30 = (int)PatchRankinePS - ((int)dll + 0x5D958 + 0x4);
         WriteCode((char*)dll + 0x5D958, &jumpNV30, 4);
+
+        // NV40
+        int jumpNV40;
+
+        // Curie - VS
+        (void*&)CurieVS = (char*)dll + 0xAE190;
+        jumpNV40 = (int)PatchCurieVS - ((int)dll + 0x1253EC + 0x4);
+        WriteCode((char*)dll + 0x1253EC, &jumpNV40, 4);
+        jumpNV40 = (int)PatchCurieVS;
+        WriteCode((char*)dll + 0x125376, &jumpNV40, 4);
+
+        // Curie - PS
+        (void*&)CuriePS = (char*)dll + 0xB2620;
+        jumpNV40 = (int)PatchCuriePS - ((int)dll + 0x5ED4A + 0x4);
+        WriteCode((char*)dll + 0x5ED4A, &jumpNV40, 4);
 
         // printf
         static void* printf_impl = &PatchPrintf;

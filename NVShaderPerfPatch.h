@@ -27,3 +27,5 @@ extern int DumpBinNV40VS(DWORD* nv40, int size);
 extern int DumpBinNV40PS(DWORD* nv40, int size);
 extern int DumpBinG70PS(DWORD* g70, int size);
 extern int DumpBinG80(DWORD* g80);
+
+extern void CreateMemoryBlob();
