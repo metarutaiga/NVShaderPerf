@@ -4,6 +4,7 @@
 #include <malloc.h>
 #include <setjmp.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <tchar.h>
 
@@ -487,7 +488,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 #pragma comment(linker, "/export:NvCompileShader=_NvCompileShader@20")
 
 extern "C"
-HRESULT WINAPI NvCompileShader(const void* shader, size_t size, const char* folder, const char* gpu, void** binary)
+HRESULT WINAPI NvCompileShader(const uint32_t* shader, size_t size, const char* folder, const char* gpu, void** binary)
 {
     NVShaderPerfQueryInterface NVSPQueryInterface = NVShaderPerfLoader(folder);
     if (NVSPQueryInterface == nullptr)
@@ -510,10 +511,8 @@ HRESULT WINAPI NvCompileShader(const void* shader, size_t size, const char* fold
     Patch17474(verbose);
     PatchRSX(verbose);
 
-    int version = 0;
-    memcpy(&version, shader, sizeof(int));
-
     enum ShaderType shaderType = (enum ShaderType)0;
+    int version = shader[0];
     if (version == 'CBXD') {
         int* dxbc = (int*)shader;
         int* rdef = nullptr;
@@ -526,6 +525,13 @@ HRESULT WINAPI NvCompileShader(const void* shader, size_t size, const char* fold
             version = rdef[6];
         }
     }
+    if (version == 'RA!!') {
+        version = shader[1];
+        switch (version & 0x00FFFFFF) {
+        case '\0pfB': shaderType = OpenGLFragmentProgram; break;
+        case '\0pvB': shaderType = OpenGLVertexProgram;   break;
+        }        
+    }
     switch (version & 0xFFFF0000) {
     case 0xFFFF0000: shaderType = Direct3DPixelShader;  break;
     case 0xFFFE0000: shaderType = Direct3DVertexShader; break;
@@ -537,14 +543,16 @@ HRESULT WINAPI NvCompileShader(const void* shader, size_t size, const char* fold
         inputMemoryData = shader;
         inputMemorySize = size;
         switch (shaderType) {
-        case Direct3DVertexShader: {
+        case Direct3DVertexShader:
+        case OpenGLVertexProgram: {
             int count = 0;
             VertexProgramResults* results = nullptr;
             result = NVShaderPerf.VertexProgramPerformance("NVShaderPerf.dll", 0, &results, &count);
             result = NVShaderPerf.FreeVertexResults(results);
             break;
         }
-        case Direct3DPixelShader: {
+        case Direct3DPixelShader:
+        case OpenGLFragmentProgram: {
             int count = 0;
             FragmentProgramResults* results = nullptr;
             result = NVShaderPerf.FragmentProgramPerformance("NVShaderPerf.dll", 0, &results, &count);

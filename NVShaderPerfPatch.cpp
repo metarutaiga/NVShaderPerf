@@ -77,6 +77,9 @@ static int PatchPrintf(const char* format, ...)
         if (strncmp(format, "end inst", 8) == 0) {
             outputMemoryEnable = false;
         }
+        else if (strncmp(format, "sipu", 4) == 0) {
+            outputMemoryEnable = false;
+        }
         else if (strcmp(format, "%03d:Start\n") == 0) {
             outputMemorySize = 0;
         }
@@ -175,7 +178,13 @@ static int (*DumpNV40PS)(DWORD* nv40, int size);
 static int PatchDumpNV40PS(DWORD* nv40, int size)
 {
     if (inputMemoryData) {
-        longjmp(terminateJump, 1);
+        if (outputMemorySize == 0) {
+           outputMemoryEnable = true;
+           outputMemorySize = 0;
+        }
+        else {
+//         longjmp(terminateJump, 1);
+        }
     }
     if (fileOutputFilename) {
         if (strstr(fileOutputFilename, ".asm") == nullptr) {
@@ -212,7 +221,13 @@ static int (*DumpG70PS)(DWORD* g70, int size);
 static int PatchDumpG70PS(DWORD* g70, int size)
 {
     if (inputMemoryData) {
-        longjmp(terminateJump, 1);
+        if (outputMemorySize == 0) {
+           outputMemoryEnable = true;
+           outputMemorySize = 0;
+        }
+        else {
+//         longjmp(terminateJump, 1);
+        }
     }
     if (fileOutputFilename) {
         if (strstr(fileOutputFilename, ".asm") == nullptr) {
@@ -439,6 +454,24 @@ static HRESULT __stdcall patchD3DXAssembleShaderFromFileA(const char* pSrcFile, 
     return D3DXAssembleShaderFromFileA(pSrcFile, pDefines, pInclude, Flags, ppShader, ppErrorMsgs);
 }
 
+static DWORD __stdcall patchGetFileSize(HANDLE hFile, LPDWORD lpFileSizeHigh)
+{
+    if (inputMemorySize) {
+        return inputMemorySize;
+    }
+
+    return GetFileSize(hFile, lpFileSizeHigh);
+}
+
+static LPCVOID __stdcall patchMapViewOfFile(HANDLE hFileMappingObject, DWORD dwDesiredAccess, DWORD dwFileOffsetHigh, DWORD dwFileOffsetLow, SIZE_T dwNumberOfBytesToMap)
+{
+    if (inputMemoryData) {
+        return inputMemoryData;
+    }
+
+    return MapViewOfFile(hFileMappingObject, dwDesiredAccess, dwFileOffsetHigh, dwFileOffsetLow, dwNumberOfBytesToMap);
+}
+
 static void WriteCode(void* pvTarget, const void* pvSource, size_t nSize)
 {
     DWORD nOldP, nNewP;
@@ -501,6 +534,16 @@ void Patch10131(int verbose)
         // fprintf
         static void* fprintf_impl = &PatchFprintf;
         WriteCode((char*)dll + 0x1CD150, &fprintf_impl, sizeof(void*));
+
+        // GetFileSize
+        static void* GetFileSize_pointer = &patchGetFileSize;
+        static void* GetFileSize_impl = &GetFileSize_pointer;
+        WriteCode((char*)dll + 0x11BB, &GetFileSize_impl, sizeof(void*));
+
+        // MapViewOfFile
+        static void* MapViewOfFile_pointer = &patchMapViewOfFile;
+        static void* MapViewOfFile_impl = &MapViewOfFile_pointer;
+        WriteCode((char*)dll + 0x11E8, &MapViewOfFile_impl, sizeof(void*));
 
         // Level
         memcpy((char*)dll + 0x28E6B0, &verbose, 1);
@@ -586,6 +629,16 @@ void Patch17474(int verbose)
         // fprintf
         static void* fprintf_impl = &PatchFprintf;
         WriteCode((char*)dll + 0x22F278, &fprintf_impl, sizeof(void*));
+
+        // GetFileSize
+        static void* GetFileSize_pointer = &patchGetFileSize;
+        static void* GetFileSize_impl = &GetFileSize_pointer;
+        WriteCode((char*)dll + 0x364CB, &GetFileSize_impl, sizeof(void*));
+
+        // MapViewOfFile
+        static void* MapViewOfFile_pointer = &patchMapViewOfFile;
+        static void* MapViewOfFile_impl = &MapViewOfFile_pointer;
+        WriteCode((char*)dll + 0x364F8, &MapViewOfFile_impl, sizeof(void*));
 
         // Level
         memcpy((char*)dll + 0x2EA418, &verbose, 1);
