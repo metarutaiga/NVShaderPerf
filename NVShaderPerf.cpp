@@ -485,10 +485,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     return 0;
 }
 
-#pragma comment(linker, "/export:NvCompileShader=_NvCompileShader@20")
+#pragma comment(linker, "/export:NVCompileShader=_NVCompileShader@24")
 
 extern "C"
-HRESULT WINAPI NvCompileShader(const uint32_t* shader, size_t size, const char* folder, const char* gpu, void** binary)
+HRESULT WINAPI NVCompileShader(const uint32_t* shader, size_t size, const char* folder, const char* gpu, void** binary, void** disasm)
 {
     NVShaderPerfQueryInterface NVSPQueryInterface = NVShaderPerfLoader(folder);
     if (NVSPQueryInterface == nullptr)
@@ -563,10 +563,12 @@ HRESULT WINAPI NvCompileShader(const uint32_t* shader, size_t size, const char* 
         }
     }
 
+    CreateBinaryBlob();
     CreateMemoryBlob();
-    if (outputMemoryBlob == nullptr)
+    if (outputBinaryBlob == nullptr && outputMemoryBlob == nullptr)
         return 0x80000000 +  __LINE__;
-    (*binary) = outputMemoryBlob;
+    (*binary) = outputBinaryBlob;
+    (*disasm) = outputMemoryBlob;
 
     return 0;
 }

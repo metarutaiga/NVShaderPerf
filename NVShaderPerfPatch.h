@@ -11,6 +11,7 @@
 extern const void* inputMemoryData;
 extern size_t inputMemorySize;
 
+extern void* outputBinaryBlob;
 extern void* outputMemoryBlob;
 
 extern jmp_buf terminateJump;
@@ -28,4 +29,5 @@ extern int DumpBinNV40PS(DWORD* nv40, int size);
 extern int DumpBinG70PS(DWORD* g70, int size);
 extern int DumpBinG80(DWORD* g80);
 
+extern void CreateBinaryBlob();
 extern void CreateMemoryBlob();

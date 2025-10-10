@@ -27,10 +27,14 @@ static HRESULT(__stdcall *D3DXCreateBuffer)(DWORD NumBytes, ID3DXBuffer** ppBuff
 const void* inputMemoryData;
 size_t inputMemorySize;
 
+char* outputBinaryData;
+size_t outputBinarySize;
+
 bool outputMemoryEnable;
 char* outputMemoryData;
 size_t outputMemorySize;
 
+void* outputBinaryBlob;
 void* outputMemoryBlob;
 
 jmp_buf terminateJump;
@@ -122,6 +126,11 @@ static int (*DumpNV30VS)(DWORD* output, DWORD* instruction);
 static int PatchDumpNV30VS(DWORD* output, DWORD* instruction)
 {
     int result = DumpNV30VS(output, instruction);
+    if (inputMemoryData) {
+        outputBinaryData = (char*)realloc(outputBinaryData, outputBinarySize + 4 * 4);
+        memcpy(outputBinaryData + outputBinarySize, output, 4 * 4);
+        outputBinarySize += 4 * 4;
+    }
     if (fileOutputFilename && strstr(fileOutputFilename, ".asm") == nullptr) {
         if (outputFileNV30 == nullptr) {
             fopen_s(&outputFileNV30, fileOutputFilename, "wb");
@@ -135,6 +144,11 @@ static int PatchDumpNV30VS(DWORD* output, DWORD* instruction)
 static int (PatchNV30::*DumpNV30PS)(DWORD* data);
 int PatchNV30::PatchDumpNV30PS(DWORD* data)
 {
+    if (inputMemoryData) {
+        outputBinaryData = (char*)realloc(outputBinaryData, outputBinarySize + 4 * 4);
+        memcpy(outputBinaryData + outputBinarySize, data, 4 * 4);
+        outputBinarySize += 4 * 4;
+    }
     if (fileOutputFilename && strstr(fileOutputFilename, ".asm") == nullptr) {
         if (outputFileNV30 == nullptr) {
             fopen_s(&outputFileNV30, fileOutputFilename, "wb");
@@ -164,6 +178,11 @@ static int (*DumpNV40VS)(DWORD* output, DWORD* instruction);
 static int PatchDumpNV40VS(DWORD* output, DWORD* instruction)
 {
     int result = DumpNV40VS(output, instruction);
+    if (inputMemoryData) {
+        outputBinaryData = (char*)realloc(outputBinaryData, outputBinarySize + 4 * 4);
+        memcpy(outputBinaryData + outputBinarySize, output, 4 * 4);
+        outputBinarySize += 4 * 4;
+    }
     if (fileOutputFilename) {
         if (outputFileNV40 == nullptr && strstr(fileOutputFilename, ".asm") == nullptr) {
             fopen_s(&outputFileNV40, fileOutputFilename, "wb");
@@ -178,6 +197,10 @@ static int (*DumpNV40PS)(DWORD* nv40, int size);
 static int PatchDumpNV40PS(DWORD* nv40, int size)
 {
     if (inputMemoryData) {
+        outputBinaryData = (char*)realloc(outputBinaryData, outputBinarySize + size);
+        memcpy(outputBinaryData + outputBinarySize, nv40, size);
+        outputBinarySize += size;
+
         if (outputMemorySize == 0) {
            outputMemoryEnable = true;
            outputMemorySize = 0;
@@ -221,6 +244,10 @@ static int (*DumpG70PS)(DWORD* g70, int size);
 static int PatchDumpG70PS(DWORD* g70, int size)
 {
     if (inputMemoryData) {
+        outputBinaryData = (char*)realloc(outputBinaryData, outputBinarySize + size);
+        memcpy(outputBinaryData + outputBinarySize, g70, size);
+        outputBinarySize += size;
+
         if (outputMemorySize == 0) {
            outputMemoryEnable = true;
            outputMemorySize = 0;
@@ -251,28 +278,37 @@ int DumpBinG70PS(DWORD* g70, int size)
 static int (*DumpG80)(DWORD* g80);
 static int PatchDumpG80(DWORD* g80)
 {
+    DWORD* data = (DWORD*)malloc(g80[6]);
+    if (data) {
+        memcpy(data, g80, g80[6]);
+        for (DWORD i = 0; i < WORD(data[2]); ++i) {
+            DWORD offset = data[10 + i * 8];
+            if (offset) {
+                offset -= (DWORD)g80;
+                data[10 + i * 8] = offset;
+            }
+        }
+    }
+
+    if (inputMemoryData) {
+        outputBinaryData = (char*)realloc(outputBinaryData, outputBinarySize + g80[6]);
+        memcpy(outputBinaryData + outputBinarySize, data, g80[6]);
+        outputBinarySize += g80[6];
+    }
+
     if (fileOutputFilename && 0) {
         if (strstr(fileOutputFilename, ".asm") == nullptr) {
             FILE* file = nullptr;
             fopen_s(&file, fileOutputFilename, "wb");
             if (file) {
-                DWORD* data = (DWORD*)malloc(g80[6]);
-                if (data) {
-                    memcpy(data, g80, g80[6]);
-                    for (DWORD i = 0; i < WORD(data[2]); ++i) {
-                        DWORD offset = data[10 + i * 8];
-                        if (offset) {
-                            offset -= (DWORD)g80;
-                            data[10 + i * 8] = offset;
-                        }
-                    }
-                    fwrite(data, 1, g80[6], file);
-                    free(data);
-                }
+                fwrite(data, 1, g80[6], file);
                 fclose(file);
             }
         }
     }
+
+    free(data);
+
     return DumpG80(g80);
 }
 
@@ -391,6 +427,16 @@ static int PatchSPA(int type, const char* shader)
     return SPA(type, shader);
 }
 
+void CreateBinaryBlob()
+{
+    ID3DXBuffer* blob = nullptr;
+    D3DXCreateBuffer(DWORD(outputBinarySize), &blob);
+    if (blob) {
+        memcpy(blob->GetBufferPointer(), outputBinaryData, outputBinarySize); 
+    }        
+    outputBinaryBlob = blob;
+}
+
 void CreateMemoryBlob()
 {
     ID3DXBuffer* blob = nullptr;
@@ -486,6 +532,27 @@ void Patch10131(int verbose)
     if (dll) {
         WriteCode((char*)dll + 0x4054, "\x0D\x00\x70\x00\x00", 5);
 
+        // G70
+        int jumpG70;
+        (void*&)DumpG70PS = (char*)dll + 0x20130;
+        jumpG70 = (int)PatchDumpG70PS - ((int)dll + 0x885D + 0x4);
+        WriteCode((char*)dll + 0x885D, &jumpG70, 4);
+        jumpG70 = (int)PatchDumpG70PS - ((int)dll + 0x88E1 + 0x4);
+        WriteCode((char*)dll + 0x88E1, &jumpG70, 4);
+
+        // NV40
+        int jumpNV40;
+        (void*&)DumpNV40PS = (char*)dll + 0x3B430;
+        (void*&)ConvertNV40VS = (char*)dll + 0xAB140;
+        (void*&)DecodeNV40VS = (char*)dll + 0xAB390;
+        (void*&)DumpNV40VS = (char*)dll + 0xAAF10;
+        jumpNV40 = (int)PatchDumpNV40PS - ((int)dll + 0x2369D + 0x4);
+        WriteCode((char*)dll + 0x2369D, &jumpNV40, 4);
+        jumpNV40 = (int)PatchDumpNV40PS - ((int)dll + 0x23721 + 0x4);
+        WriteCode((char*)dll + 0x23721, &jumpNV40, 4);
+        jumpNV40 = (int)PatchDumpNV40VS - ((int)dll + 0xAE115 + 0x4);
+        WriteCode((char*)dll + 0xAE115, &jumpNV40, 4);
+
         // NV30
         union Alias { int (PatchNV30::*classFunction)(DWORD* data); void* function; };
         int jumpNV30;
@@ -511,9 +578,6 @@ void Patch10131(int verbose)
         (void*&)RankinePS = (char*)dll + 0xB2620;
         jumpNV30 = (int)PatchRankinePS - ((int)dll + 0x5D958 + 0x4);
         WriteCode((char*)dll + 0x5D958, &jumpNV30, 4);
-
-        // NV40
-        int jumpNV40;
 
         // Curie - VS
         (void*&)CurieVS = (char*)dll + 0xAE190;
