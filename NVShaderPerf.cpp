@@ -524,6 +524,8 @@ HRESULT WINAPI NVCompileShader(const uint32_t* shader, size_t size, const char* 
         if (rdef) {
             version = rdef[6];
         }
+        if (gpu && gpu[1] != '8')
+            return 0x80000000 +  __LINE__;
     }
     if (version == 'RA!!') {
         version = shader[1];
@@ -563,12 +565,19 @@ HRESULT WINAPI NVCompileShader(const uint32_t* shader, size_t size, const char* 
         }
     }
 
-    CreateBinaryBlob();
-    CreateMemoryBlob();
-    if (outputBinaryBlob == nullptr && outputMemoryBlob == nullptr)
-        return 0x80000000 +  __LINE__;
-    (*binary) = outputBinaryBlob;
-    (*disasm) = outputMemoryBlob;
+    if (binary) {
+        CreateBinaryBlob();
+        if (outputBinaryBlob == nullptr)
+            return 0x80000000 +  __LINE__;
+        (*binary) = outputBinaryBlob;
+    }
+
+    if (disasm) {
+        CreateMemoryBlob();
+        if (outputMemoryBlob == nullptr)
+            return 0x80000000 +  __LINE__;
+        (*disasm) = outputMemoryBlob;
+    }
 
     return 0;
 }
