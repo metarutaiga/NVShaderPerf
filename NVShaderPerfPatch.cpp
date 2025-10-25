@@ -84,6 +84,9 @@ static int PatchPrintf(const char* format, ...)
         else if (strncmp(format, "sipu", 4) == 0) {
             outputMemoryEnable = false;
         }
+        else if (strncmp(buffer, "*** Done", 8) == 0) {
+            outputMemoryEnable = false;
+        }
         else if (strcmp(format, "%03d:Start\n") == 0) {
             outputMemorySize = 0;
         }
@@ -111,11 +114,41 @@ static int PatchFprintf(FILE* file, const char* format, ...)
     char* buffer = (char*)malloc(length + 1);
     length = vsnprintf(buffer, length + 1, format, args);
     WriteString(buffer);
+
+    if (outputMemoryEnable == false) {
+        if (strncmp(buffer, "!!SPA1.0", 8) == 0) {
+            outputMemoryEnable = true;
+        }
+    }
+    if (outputMemoryEnable && buffer) {
+        if (strncmp(buffer, "*** Done", 8) == 0) {
+            outputMemoryEnable = false;
+        }
+        else {
+            outputMemoryData = (char*)realloc(outputMemoryData, outputMemorySize + length);
+            memcpy(outputMemoryData + outputMemorySize, buffer, length);
+            outputMemorySize += length;
+        }
+    }
+
     free(buffer);
 
     va_end(args);
 
     return length;
+}
+
+static int verbose = 0;
+int* GlobalVerbose = &verbose;
+
+int ForceGenCode = -1;
+static int (*SelectGenCode)(int*, int);
+static int PatchSelectGenCode(int* data, bool ucode)
+{
+    if (ForceGenCode >= 0) {
+        return SelectGenCode(data, ForceGenCode);
+    }
+    return SelectGenCode(data, ucode);
 }
 
 struct PatchNV30 {
@@ -526,11 +559,54 @@ static void WriteCode(void* pvTarget, const void* pvSource, size_t nSize)
     VirtualProtect(pvTarget, nSize, nOldP, &nNewP);
 }
 
-void Patch10131(int verbose)
+static struct {
+    const char* name;
+    const char* fullname;
+    int data[9];
+} Table10131[] = {
+  { "NV30", "GeForceFX 5800 Ultra",    { 500,  500, 3,  4, 2, 128, 0, 0x3DA0, 0x3AC0 } },
+  { "NV31", "GeForceFX 5600 Ultra",    { 400,  400, 2,  2, 2, 128, 0, 0x3DA0, 0x3AC0 } },
+  { "NV34", "GeForceFX 5200 Ultra",    { 400,  325, 2,  2, 2, 128, 0, 0x3DA0, 0x3AC0 } },
+  { "NV35", "GeForceFX 5900 Ultra",    { 450,  425, 3,  4, 2, 256, 0, 0x3DA0, 0x3AC0 } },
+  { "NV36", "GeForceFX 5700 Ultra",    { 475,  450, 3,  2, 2, 128, 0, 0x3DA0, 0x3AC0 } },
+  { "NV38", "GeForceFX 5950 Ultra",    { 475,  475, 3,  4, 2, 256, 0, 0x3DA0, 0x3AC0 } },
+  { "NV40", "GeForce 6800 Ultra",      { 400,  550, 6, 16, 1, 256, 0, 0x4030, 0x4170 } },
+  { "NV40-GT", "GeForce 6800 GT",      { 350,  500, 6, 16, 1, 256, 0, 0x4030, 0x4170 } },
+  { "NV40-12", "GeForce 6800",         { 325,  350, 5, 12, 1, 256, 0, 0x4030, 0x4170 } },
+  { "NV43-GT", "GeForce 6600 GT",      { 500,  500, 3,  8, 1, 128, 0, 0x4030, 0x4170 } },
+  { "NV44", "GeForce 6200",            { 350,  275, 3,  4, 1, 128, 0, 0x4030, 0x4170 } },
+  { "G70-GT", "GeForce 7800 GTX",      { 430,  600, 8, 24, 1, 256, 0, 0x4030, 0x4170 } },
+  { "G70", "GeForce 7800 GT",          { 400,  500, 8, 24, 1, 256, 0, 0x4030, 0x4170 } },
+  { "NV50", "GeForce 8800 GTX",        { 675,  900, 8,  2, 6, 384, 0, 0x4030, 0x4170 } },
+//{ "G80", "GeForce 8800 GTX",         { 675,  900, 8,  2, 6, 384, 0, 0x4030, 0x4170 } },
+//{ "G80-Ultra", "GeForce 8800 Ultra", { 750, 1080, 8,  2, 6, 384, 0, 0x4030, 0x4170 } },
+//{ "G80-GTS", "GeForce 8800 GTS",     { 600,  800, 8,  2, 6, 320, 0, 0x4030, 0x4170 } },
+  {},
+};
+
+void Patch10131(const char* path)
 {
+    if (strstr(path, "2.01.10000.0305") == nullptr)
+        return;
+
     HMODULE dll = GetModuleHandleA("NVShaderPerf_10131.dll");
+    if (dll == nullptr)
+        dll = LoadLibraryA("2.01.10000.0305\\NVShaderPerf_10131.dll");
     if (dll) {
         WriteCode((char*)dll + 0x4054, "\x0D\x00\x70\x00\x00", 5);
+
+        // Enable G80
+        for (int i = 0; i < sizeof(Table10131) / sizeof(Table10131[0]); ++i) {
+            Table10131[i].data[7] += (int)dll;
+            Table10131[i].data[8] += (int)dll;
+        }
+        int jumpTable = (int)Table10131;
+        WriteCode((char*)dll + 0x4561, &jumpTable, 4);
+        WriteCode((char*)dll + 0x456C, &jumpTable, 4);
+        WriteCode((char*)dll + 0x4E93, &jumpTable, 4);
+        WriteCode((char*)dll + 0x4EA9, &jumpTable, 4);
+        WriteCode((char*)dll + 0x5343, &jumpTable, 4);
+        WriteCode((char*)dll + 0x5359, &jumpTable, 4);
 
         // G70
         int jumpG70;
@@ -567,6 +643,42 @@ void Patch10131(int verbose)
         jumpNV30 = (int)PatchDumpNV30VS - ((int)dll + 0xAB5C5 + 0x4);
         WriteCode((char*)dll + 0xAB5C5, &jumpNV30, 4);
 
+        // G80
+        int jumpG80;
+        (void*&)DumpG80 = (char*)dll + 0xB4790;
+        jumpG80 = (int)PatchDumpG80 - ((int)dll + 0x11C8E0 + 0x4);
+        WriteCode((char*)dll + 0x11C8E0, &jumpG80, 4);
+
+        // Select
+        (void*&)SelectGenCode = (char*)dll + 0x168A40;
+        jumpG80 = (int)PatchSelectGenCode - ((int)dll + 0x11C866 + 0x4);
+        WriteCode((char*)dll + 0x11C866, &jumpG80, 4);
+
+        // vp30
+        WriteCode((char*)dll + 0x179316, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+        WriteCode((char*)dll + 0x179806, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+
+        // vp40
+        WriteCode((char*)dll + 0x17A056, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+        WriteCode((char*)dll + 0x17A3E5, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+
+        // vp50
+        WriteCode((char*)dll + 0x17E6EC, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+        WriteCode((char*)dll + 0x17E75C, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+
+        // fp30
+        WriteCode((char*)dll + 0x1782B5, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+        WriteCode((char*)dll + 0x178595, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+
+        // fp40
+        WriteCode((char*)dll + 0x10E4A8, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+        WriteCode((char*)dll + 0x17A617, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+
+        // fp50
+        WriteCode((char*)dll + 0x11C2DF, "\x90\x90\x90\x90\x90\x90\x90", 7);
+        WriteCode((char*)dll + 0x18006C, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+        WriteCode((char*)dll + 0x1800DC, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+
         // Rankine - VS
         (void*&)RankineVS = (char*)dll + 0xAB650;
         jumpNV30 = (int)PatchRankineVS - ((int)dll + 0x12663C + 0x4);
@@ -591,6 +703,11 @@ void Patch10131(int verbose)
         jumpNV40 = (int)PatchCuriePS - ((int)dll + 0x5ED4A + 0x4);
         WriteCode((char*)dll + 0x5ED4A, &jumpNV40, 4);
 
+        // SPA
+//      (void*&)SPA = (char*)dll + 0x2380;
+//      jumpG80 = (int)PatchSPA - ((int)dll + 0x1ECB + 0x4);
+//      WriteCode((char*)dll + 0x1ECB, &jumpG80, 4);
+
         // printf
         static void* printf_impl = &PatchPrintf;
         WriteCode((char*)dll + 0x1CD0E0, &printf_impl, sizeof(void*));
@@ -610,10 +727,12 @@ void Patch10131(int verbose)
         WriteCode((char*)dll + 0x11E8, &MapViewOfFile_impl, sizeof(void*));
 
         // Level
-        memcpy((char*)dll + 0x28E6B0, &verbose, 1);
+        GlobalVerbose = (int*)((char*)dll + 0x28E6B0);
     }
 
     dll = GetModuleHandleA("NVShaderPerf.dll");
+    if (dll == nullptr)
+        dll = LoadLibraryA("2.01.10000.0305\\NVShaderPerf.dll");
     if (dll) {
         HMODULE d3dx9 = LoadLibraryA("d3dx9_30.dll");
         if (d3dx9) {
@@ -626,9 +745,14 @@ void Patch10131(int verbose)
     }
 }
 
-void Patch17474(int verbose)
+void Patch17474(const char* path)
 {
+    if (strstr(path, "2.07.0804.1530") == nullptr)
+        return;
+
     HMODULE dll = GetModuleHandleA("NVShaderPerf_17474.dll");
+    if (dll == nullptr)
+        dll = LoadLibraryA("2.07.0804.1530\\NVShaderPerf_17474.dll");
     if (dll) {
         unsigned int flags = 0x00007000;
         WriteCode((char*)dll + 0x3E706, &flags, 4);
@@ -663,10 +787,26 @@ void Patch17474(int verbose)
         jumpG80 = (int)PatchDumpG80 - ((int)dll + 0x1178C7 + 0x4);
         WriteCode((char*)dll + 0x1178C7, &jumpG80, 4);
 
-        // vp50_ucode
+        // Select
+        (void*&)SelectGenCode = (char*)dll + 0x186B30;
+        jumpG80 = (int)PatchSelectGenCode - ((int)dll + 0x117846 + 0x4);
+        WriteCode((char*)dll + 0x117846, &jumpG80, 4);
+
+        // vp40
+        WriteCode((char*)dll + 0x1C0416, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
+        WriteCode((char*)dll + 0x1C0705, "\x6A\x01\x58\x89\x85\xC8\x00\x00\x00\x57", 10);
+
+        // vp50
+        WriteCode((char*)dll + 0x1C48D0, "\x90\x90", 2);
+        WriteCode((char*)dll + 0x1C4AF4, "\x6A\x01\x58\x89\x87\xC8\x00\x00\x00", 9);
         WriteCode((char*)dll + 0x1C4B5D, "\x6A\x01\x58\x89\x87\xC8\x00\x00\x00", 9);
 
-        // fp50_ucode
+        // fp40
+        WriteCode((char*)dll + 0x1838E6, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
+        WriteCode((char*)dll + 0x1C0937, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
+
+        // fp50
+        WriteCode((char*)dll + 0x1C609C, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
         WriteCode((char*)dll + 0x1C697C, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
 
         // Curie - VS
@@ -705,10 +845,12 @@ void Patch17474(int verbose)
         WriteCode((char*)dll + 0x364F8, &MapViewOfFile_impl, sizeof(void*));
 
         // Level
-        memcpy((char*)dll + 0x2EA418, &verbose, 1);
+        GlobalVerbose = (int*)((char*)dll + 0x2EA418);
     }
 
     dll = GetModuleHandleA("NVShaderPerf.dll");
+    if (dll == nullptr)
+        dll = LoadLibraryA("2.07.0804.1530\\NVShaderPerf.dll");
     if (dll) {
         HMODULE d3dx9 = nullptr;
         for (int i = 100; i >= 30; --i) {
@@ -728,11 +870,16 @@ void Patch17474(int verbose)
     }
 }
 
-void PatchRSX(int verbose)
+void PatchRSX(const char* path)
 {
+    if (strstr(path, "2.09.1109.0300") == nullptr)
+        return;
+
     HMODULE dll = GetModuleHandleA("NVShaderPerf_RSX.dll");
+    if (dll == nullptr)
+        dll = LoadLibraryA("2.09.1109.0300\\NVShaderPerf_RSX.dll");
     if (dll) {
         // Level
-        memcpy((char*)dll + 0x200A18, &verbose, 1);
+        GlobalVerbose = (int*)((char*)dll + 0x200A18);
     }
 }
