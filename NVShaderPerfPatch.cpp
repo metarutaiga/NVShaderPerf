@@ -87,6 +87,12 @@ static int PatchPrintf(const char* format, ...)
         else if (strncmp(buffer, "*** Done", 8) == 0) {
             outputMemoryEnable = false;
         }
+        else if (strncmp(buffer, "***** End", 9) == 0) {
+            outputMemoryEnable = false;
+        }
+        else if (strncmp(buffer, "COPP", 4) == 0) {
+            outputMemoryEnable = false;
+        }
         else if (strcmp(format, "%03d:Start\n") == 0) {
             outputMemorySize = 0;
         }
@@ -124,6 +130,9 @@ static int PatchFprintf(FILE* file, const char* format, ...)
         if (strncmp(buffer, "*** Done", 8) == 0) {
             outputMemoryEnable = false;
         }
+        else if (strncmp(buffer, "COPP", 4) == 0) {
+            outputMemoryEnable = false;
+        }
         else {
             outputMemoryData = (char*)realloc(outputMemoryData, outputMemorySize + length);
             memcpy(outputMemoryData + outputMemorySize, buffer, length);
@@ -138,13 +147,22 @@ static int PatchFprintf(FILE* file, const char* format, ...)
     return length;
 }
 
+static void PatchLog(int level, const char* message)
+{
+    PatchFprintf(stdout, "%s", message);
+}
+
 static int verbose = 0;
 int* GlobalVerbose = &verbose;
 
+int VerboseGenCode = -1;
 int ForceGenCode = -1;
 static int (*SelectGenCode)(int*, int);
 static int PatchSelectGenCode(int* data, bool ucode)
 {
+    if (VerboseGenCode >= 0) {
+        data[VerboseGenCode] = 1;
+    }
     if (ForceGenCode >= 0) {
         return SelectGenCode(data, ForceGenCode);
     }
@@ -441,9 +459,10 @@ static int (*SPA)(int type, const char* shader);
 static int PatchSPA(int type, const char* shader)
 {
     if (inputMemoryData) {
-        outputMemorySize = strlen(shader);
-        outputMemoryData = (char*)malloc(outputMemorySize);
-        memcpy(outputMemoryData, shader, outputMemorySize);
+//      outputMemorySize = strlen(shader);
+//      outputMemoryData = (char*)malloc(outputMemorySize);
+//      memcpy(outputMemoryData, shader, outputMemorySize);
+        printf("%s", shader);
 
         longjmp(terminateJump, 1);
     }
@@ -650,10 +669,12 @@ void Patch10131(const char* path)
         WriteCode((char*)dll + 0x11C8E0, &jumpG80, 4);
 
         // Select
+        VerboseGenCode = 48;
         (void*&)SelectGenCode = (char*)dll + 0x168A40;
         jumpG80 = (int)PatchSelectGenCode - ((int)dll + 0x11C866 + 0x4);
         WriteCode((char*)dll + 0x11C866, &jumpG80, 4);
 
+#if 0
         // vp30
         WriteCode((char*)dll + 0x179316, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
         WriteCode((char*)dll + 0x179806, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
@@ -678,6 +699,10 @@ void Patch10131(const char* path)
         WriteCode((char*)dll + 0x11C2DF, "\x90\x90\x90\x90\x90\x90\x90", 7);
         WriteCode((char*)dll + 0x18006C, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
         WriteCode((char*)dll + 0x1800DC, "\x6A\x01\x58\x89\x86\xC0\x00\x00\x00\x57", 10);
+#else
+        // fp50
+        WriteCode((char*)dll + 0x11C2DF, "\x90\x90\x90\x90\x90\x90\x90", 7);
+#endif
 
         // Rankine - VS
         (void*&)RankineVS = (char*)dll + 0xAB650;
@@ -787,11 +812,17 @@ void Patch17474(const char* path)
         jumpG80 = (int)PatchDumpG80 - ((int)dll + 0x1178C7 + 0x4);
         WriteCode((char*)dll + 0x1178C7, &jumpG80, 4);
 
+        // parseasm
+        int jumpLog = (int)&PatchLog;
+        WriteCode((char*)dll + 0x116E28, &jumpLog, 4);
+
         // Select
+        VerboseGenCode = 50;
         (void*&)SelectGenCode = (char*)dll + 0x186B30;
         jumpG80 = (int)PatchSelectGenCode - ((int)dll + 0x117846 + 0x4);
         WriteCode((char*)dll + 0x117846, &jumpG80, 4);
 
+#if 0
         // vp40
         WriteCode((char*)dll + 0x1C0416, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
         WriteCode((char*)dll + 0x1C0705, "\x6A\x01\x58\x89\x85\xC8\x00\x00\x00\x57", 10);
@@ -808,6 +839,7 @@ void Patch17474(const char* path)
         // fp50
         WriteCode((char*)dll + 0x1C609C, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
         WriteCode((char*)dll + 0x1C697C, "\x6A\x01\x58\x89\x86\xC8\x00\x00\x00\x57", 10);
+#endif
 
         // Curie - VS
         (void*&)CurieVS = (char*)dll + 0xD2170;

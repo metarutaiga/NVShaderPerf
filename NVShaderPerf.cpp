@@ -544,12 +544,15 @@ HRESULT WINAPI NVCompileShader(const uint32_t* shader, size_t size, const char* 
     result = NVShaderPerf.SetValue(ShaderType, shaderType);
     result = NVShaderPerf.SetValuePtr(GPUName, gpu);
 
-   inputMemoryData = shader;
-   inputMemorySize = size;
-   for (int i = 0; i < 2; ++i) {
+    VerboseGenCode = -abs(VerboseGenCode);
+
+    inputMemoryData = shader;
+    inputMemorySize = size;
+    for (int i = 0; i < 2; ++i) {
        if (setjmp(terminateJump) == 0) {
             ForceGenCode = -1;
-            if (gpu && (gpu[2] == '5')) {
+            if (gpu && ((gpu[2] == '5') || gpu[1] == '8')) {
+                VerboseGenCode = (i == 1) ? abs(VerboseGenCode) : -abs(VerboseGenCode);
                 ForceGenCode = (i == 1) ? 1 : 0;
             }
             else if (i > 0) {

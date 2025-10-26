@@ -23,6 +23,8 @@ extern void Patch17474(const char* path);
 extern void PatchRSX(const char* path);
 
 extern int* GlobalVerbose;
+
+extern int VerboseGenCode;
 extern int ForceGenCode;
 
 extern int DumpBinNV30VS(DWORD* nv30, int size);
